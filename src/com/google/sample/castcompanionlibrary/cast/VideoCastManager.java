@@ -1062,7 +1062,7 @@ public class VideoCastManager extends BaseCastManager
      */
     public void loadMedia(MediaInfo media, boolean autoPlay, int position, JSONObject customData)
             throws TransientNetworkDisconnectionException, NoConnectionException {
-        LOGD(TAG, "loadMedia: " + media);
+        //LOGD(TAG, "loadMedia: " + media);
         checkConnectivity();
         if (media == null) {
             return;
