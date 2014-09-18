@@ -17,6 +17,7 @@ android {
     compileSdkVersion 19
     buildToolsVersion "19.1.0"
     publishNonDefault true
+    defaultPublishConfig "release"
 
     defaultConfig {
         minSdkVersion 10

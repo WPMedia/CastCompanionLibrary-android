@@ -76,6 +76,7 @@ import android.preference.PreferenceScreen;
 import android.support.v7.app.MediaRouteDialogFactory;
 import android.support.v7.media.MediaRouter.RouteInfo;
 import android.text.TextUtils;
+import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.accessibility.CaptioningManager;
@@ -807,7 +808,7 @@ public class VideoCastManager extends BaseCastManager
      * if the notification feature has been enabled during the initialization.
      * @see {@link BaseCastManager#enableFeatures()}
      */
-    private boolean startNotificationService(boolean visibility) {
+    public boolean startNotificationService(boolean visibility) {
         if (!isFeatureEnabled(FEATURE_NOTIFICATION)) {
             return true;
         }
@@ -907,8 +908,8 @@ public class VideoCastManager extends BaseCastManager
     }
 
     @Override
-    void onApplicationConnected(ApplicationMetadata appMetadata,
-                                String applicationStatus, String sessionId, boolean wasLaunched) {
+    void onApplicationConnected(final ApplicationMetadata appMetadata,
+                                String applicationStatus, String sessionId, final boolean wasLaunched) {
         LOGD(TAG, "onApplicationConnected() reached with sessionId: " + sessionId
                 + ", and mReconnectionStatus=" + mReconnectionStatus);
 
@@ -946,12 +947,13 @@ public class VideoCastManager extends BaseCastManager
                                 onFailed(R.string.failed_status_request,
                                         result.getStatus().getStatusCode());
                             }
-
                         }
                     });
+
             synchronized (mVideoConsumers) {
                 for (IVideoCastConsumer consumer : mVideoConsumers) {
                     try {
+                        LOGD(TAG, "IVideoCastConsumer : " + consumer + " - " + wasLaunched);
                         consumer.onApplicationConnected(appMetadata, mSessionId, wasLaunched);
                     } catch (Exception e) {
                         LOGE(TAG, "onApplicationConnected(): Failed to inform " + consumer, e);
@@ -1771,9 +1773,11 @@ public class VideoCastManager extends BaseCastManager
             new FetchBitmapTask() {
                 @Override
                 protected void onPostExecute(Bitmap bitmap) {
-                    mRemoteControlClientCompat.editMetadata(false).putBitmap(
-                            RemoteControlClientCompat.MetadataEditorCompat.
-                                    METADATA_KEY_ARTWORK, bitmap).apply();
+                    if(mRemoteControlClientCompat != null) {
+                        mRemoteControlClientCompat.editMetadata(false).putBitmap(
+                                RemoteControlClientCompat.MetadataEditorCompat.
+                                        METADATA_KEY_ARTWORK, bitmap).apply();
+                    }
                 }
             }.start(imgUrl);
         }

@@ -16,23 +16,6 @@
 
 package com.google.sample.castcompanionlibrary.notification;
 
-import static com.google.sample.castcompanionlibrary.utils.LogUtils.LOGD;
-import static com.google.sample.castcompanionlibrary.utils.LogUtils.LOGE;
-
-import com.google.android.gms.cast.MediaInfo;
-import com.google.android.gms.cast.MediaMetadata;
-import com.google.android.gms.cast.MediaStatus;
-import com.google.sample.castcompanionlibrary.R;
-import com.google.sample.castcompanionlibrary.cast.VideoCastManager;
-import com.google.sample.castcompanionlibrary.cast.callbacks.VideoCastConsumerImpl;
-import com.google.sample.castcompanionlibrary.cast.exceptions.CastException;
-import com.google.sample.castcompanionlibrary.cast.exceptions.NoConnectionException;
-import com.google.sample.castcompanionlibrary.cast.exceptions.TransientNetworkDisconnectionException;
-import com.google.sample.castcompanionlibrary.cast.player.VideoCastControllerActivity;
-import com.google.sample.castcompanionlibrary.utils.FetchBitmapTask;
-import com.google.sample.castcompanionlibrary.utils.LogUtils;
-import com.google.sample.castcompanionlibrary.utils.Utils;
-
 import android.app.Notification;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
@@ -48,6 +31,23 @@ import android.os.IBinder;
 import android.support.v4.app.NotificationCompat;
 import android.support.v4.app.TaskStackBuilder;
 import android.widget.RemoteViews;
+
+import com.google.android.gms.cast.MediaInfo;
+import com.google.android.gms.cast.MediaMetadata;
+import com.google.android.gms.cast.MediaStatus;
+import com.google.sample.castcompanionlibrary.R;
+import com.google.sample.castcompanionlibrary.cast.VideoCastManager;
+import com.google.sample.castcompanionlibrary.cast.callbacks.VideoCastConsumerImpl;
+import com.google.sample.castcompanionlibrary.cast.exceptions.CastException;
+import com.google.sample.castcompanionlibrary.cast.exceptions.NoConnectionException;
+import com.google.sample.castcompanionlibrary.cast.exceptions.TransientNetworkDisconnectionException;
+import com.google.sample.castcompanionlibrary.cast.player.VideoCastControllerActivity;
+import com.google.sample.castcompanionlibrary.utils.FetchBitmapTask;
+import com.google.sample.castcompanionlibrary.utils.LogUtils;
+import com.google.sample.castcompanionlibrary.utils.Utils;
+
+import static com.google.sample.castcompanionlibrary.utils.LogUtils.LOGD;
+import static com.google.sample.castcompanionlibrary.utils.LogUtils.LOGE;
 
 /**
  * A service to provide status bar Notifications when we are casting. For JB+ versions, notification
@@ -280,7 +280,8 @@ public class VideoCastNotificationService extends Service {
         Intent contentIntent = new Intent(this, mTargetActivity);
 
         contentIntent.putExtra("media", mediaWrapper);
-
+        // TODO :
+        contentIntent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         TaskStackBuilder stackBuilder = TaskStackBuilder.create(this);
 
         stackBuilder.addParentStack(mTargetActivity);
@@ -292,7 +293,8 @@ public class VideoCastNotificationService extends Service {
 
         // Gets a PendingIntent containing the entire back stack
         PendingIntent resultPendingIntent =
-                stackBuilder.getPendingIntent(NOTIFICATION_ID, PendingIntent.FLAG_UPDATE_CURRENT);
+                PendingIntent.getActivity(this, NOTIFICATION_ID, contentIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+                //stackBuilder.getPendingIntent(NOTIFICATION_ID, PendingIntent.FLAG_UPDATE_CURRENT);
 
         MediaMetadata mm = info.getMetadata();
 
@@ -378,6 +380,7 @@ public class VideoCastNotificationService extends Service {
      * Reads application ID and target activity from preference storage.
      */
     private void readPersistedData() {
+
         mApplicationId = Utils.getStringFromPreference(
                 this, VideoCastManager.PREFS_KEY_APPLICATION_ID);
         String targetName = Utils.getStringFromPreference(
@@ -390,7 +393,6 @@ public class VideoCastNotificationService extends Service {
             } else {
                 mTargetActivity = VideoCastControllerActivity.class;
             }
-
         } catch (ClassNotFoundException e) {
             LOGE(TAG, "Failed to find the targetActivity class", e);
         }

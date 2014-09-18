@@ -58,7 +58,7 @@ import android.widget.TextView;
 public class MiniController extends RelativeLayout implements IMiniController {
 
     private static final String TAG = "MiniController";
-    protected ImageView mIcon;
+    //protected ImageView mIcon;
     protected TextView mTitle;
     protected TextView mSubTitle;
     protected ImageView mPlayPause;
@@ -140,23 +140,6 @@ public class MiniController extends RelativeLayout implements IMiniController {
                 }
             }
         });
-
-        mContainer.setOnClickListener(new OnClickListener() {
-
-            @Override
-            public void onClick(View v) {
-
-                if (null != mListener) {
-                    setLoadingVisibility(false);
-                    try {
-                        mListener.onTargetActivityInvoked(mIcon.getContext());
-                    } catch (Exception e) {
-                        mListener.onFailed(R.string.failed_perform_action, -1);
-                    }
-                }
-
-            }
-        });
     }
 
     /**
@@ -171,7 +154,7 @@ public class MiniController extends RelativeLayout implements IMiniController {
 
     @Override
     final public void setIcon(Bitmap bm) {
-        mIcon.setImageBitmap(bm);
+        //mIcon.setImageBitmap(bm);
     }
 
     @Override
@@ -268,7 +251,7 @@ public class MiniController extends RelativeLayout implements IMiniController {
     }
 
     private void loadViews() {
-        mIcon = (ImageView) findViewById(R.id.iconView);
+        //mIcon = (ImageView) findViewById(R.id.iconView);
         mTitle = (TextView) findViewById(R.id.titleView);
         mSubTitle = (TextView) findViewById(R.id.subTitleView);
         mPlayPause = (ImageView) findViewById(R.id.playPauseView);
