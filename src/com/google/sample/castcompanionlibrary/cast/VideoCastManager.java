@@ -2006,7 +2006,7 @@ public class VideoCastManager extends BaseCastManager
         public boolean handleMessage(Message msg) {
             boolean visibility = msg.what != START_NOTIF_WHAT;
 
-            if (isFeatureEnabled(FEATURE_NOTIFICATION)) {
+            if (isFeatureEnabled(FEATURE_NOTIFICATION) && mContext != null) {
                 Intent intent = new Intent(VideoCastNotificationService.ACTION_VISIBILITY);
                 intent.setPackage(mContext.getPackageName());
                 intent.putExtra("visible", visibility);
