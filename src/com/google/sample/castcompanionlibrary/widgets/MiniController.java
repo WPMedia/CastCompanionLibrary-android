@@ -16,7 +16,15 @@
 
 package com.google.sample.castcompanionlibrary.widgets;
 
-import static com.google.sample.castcompanionlibrary.utils.LogUtils.LOGE;
+import com.google.android.gms.cast.MediaInfo;
+import com.google.android.gms.cast.MediaStatus;
+import com.google.sample.castcompanionlibrary.R;
+import com.google.sample.castcompanionlibrary.cast.VideoCastManager;
+import com.google.sample.castcompanionlibrary.cast.exceptions.CastException;
+import com.google.sample.castcompanionlibrary.cast.exceptions.NoConnectionException;
+import com.google.sample.castcompanionlibrary.cast.exceptions.OnFailedListener;
+import com.google.sample.castcompanionlibrary.cast.exceptions.TransientNetworkDisconnectionException;
+import com.google.sample.castcompanionlibrary.utils.FetchBitmapTask;
 
 import android.content.Context;
 import android.graphics.Bitmap;
@@ -30,17 +38,6 @@ import android.widget.ImageView;
 import android.widget.ProgressBar;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
-
-import com.google.android.gms.cast.MediaInfo;
-import com.google.android.gms.cast.MediaStatus;
-import com.google.sample.castcompanionlibrary.R;
-import com.google.sample.castcompanionlibrary.cast.VideoCastManager;
-import com.google.sample.castcompanionlibrary.cast.exceptions.CastException;
-import com.google.sample.castcompanionlibrary.cast.exceptions.NoConnectionException;
-import com.google.sample.castcompanionlibrary.cast.exceptions.OnFailedListener;
-import com.google.sample.castcompanionlibrary.cast.exceptions.TransientNetworkDisconnectionException;
-
-import java.net.URL;
 
 /**
  * A compound component that provides a superset of functionalities required for the global access
@@ -61,7 +58,7 @@ import java.net.URL;
 public class MiniController extends RelativeLayout implements IMiniController {
 
     private static final String TAG = "MiniController";
-    protected ImageView mIcon;
+    //protected ImageView mIcon;
     protected TextView mTitle;
     protected TextView mSubTitle;
     protected ImageView mPlayPause;
@@ -76,6 +73,7 @@ public class MiniController extends RelativeLayout implements IMiniController {
     private View mContainer;
     private int mStreamType = MediaInfo.STREAM_TYPE_BUFFERED;
     private Drawable mStopDrawable;
+    private FetchBitmapTask mFetchBitmapTask;
 
     /**
      * @param context
@@ -142,23 +140,6 @@ public class MiniController extends RelativeLayout implements IMiniController {
                 }
             }
         });
-
-        mContainer.setOnClickListener(new OnClickListener() {
-
-            @Override
-            public void onClick(View v) {
-
-                if (null != mListener) {
-                    setLoadingVisibility(false);
-                    try {
-                        mListener.onTargetActivityInvoked(mIcon.getContext());
-                    } catch (Exception e) {
-                        mListener.onFailed(R.string.failed_perform_action, -1);
-                    }
-                }
-
-            }
-        });
     }
 
     /**
@@ -173,7 +154,7 @@ public class MiniController extends RelativeLayout implements IMiniController {
 
     @Override
     final public void setIcon(Bitmap bm) {
-        mIcon.setImageBitmap(bm);
+        //mIcon.setImageBitmap(bm);
     }
 
     @Override
@@ -183,29 +164,33 @@ public class MiniController extends RelativeLayout implements IMiniController {
         }
 
         mIconUri = uri;
-        new Thread(new Runnable() {
-            Bitmap bm = null;
-
+        if (mFetchBitmapTask != null) {
+            mFetchBitmapTask.cancel(true);
+        }
+        mFetchBitmapTask = new FetchBitmapTask() {
             @Override
-            public void run() {
-                try {
-                    URL imgUrl = new URL(mIconUri.toString());
-                    bm = BitmapFactory.decodeStream(imgUrl.openStream());
-                } catch (Exception e) {
-                    LOGE(TAG, "setIcon(): Failed to load the image with url: " +
-                            mIconUri + ", using the default one", e);
-                    bm = BitmapFactory.decodeResource(getResources(), R.drawable.dummy_album_art);
+            protected void onPostExecute(Bitmap bitmap) {
+                if (bitmap == null) {
+                    bitmap = BitmapFactory.decodeResource(getResources(),
+                            R.drawable.dummy_album_art);
                 }
-                mIcon.post(new Runnable() {
-
-                    @Override
-                    public void run() {
-                        setIcon(bm);
-                    }
-                });
-
+                setIcon(bitmap);
+                if (this == mFetchBitmapTask) {
+                    mFetchBitmapTask = null;
+                }
             }
-        }).start();
+        };
+
+        mFetchBitmapTask.start(uri);
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        super.onDetachedFromWindow();
+        if (mFetchBitmapTask != null) {
+            mFetchBitmapTask.cancel(true);
+            mFetchBitmapTask = null;
+        }
     }
 
     @Override
@@ -266,7 +251,7 @@ public class MiniController extends RelativeLayout implements IMiniController {
     }
 
     private void loadViews() {
-        mIcon = (ImageView) findViewById(R.id.iconView);
+        //mIcon = (ImageView) findViewById(R.id.iconView);
         mTitle = (TextView) findViewById(R.id.titleView);
         mSubTitle = (TextView) findViewById(R.id.subTitleView);
         mPlayPause = (ImageView) findViewById(R.id.playPauseView);
