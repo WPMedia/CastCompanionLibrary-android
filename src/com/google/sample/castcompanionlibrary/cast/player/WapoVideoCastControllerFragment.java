@@ -12,8 +12,11 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.support.v4.app.DialogFragment;
 import android.support.v4.app.Fragment;
+import android.support.v7.app.MediaRouteButton;
 import android.text.TextUtils;
 import android.view.LayoutInflater;
+import android.view.Menu;
+import android.view.MenuInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
@@ -84,6 +87,8 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
     private int mStreamType;
     private ImageView mCastThumbNail;
     private ImageView mClosedCaptionIcon;
+    private ImageView blurImage;
+    private android.support.v7.app.MediaRouteButton mediaRouteFeatureButton;
 
     private enum OverallState {
         AUTHORIZING, PLAYBACK, UNKNOWN;
@@ -111,6 +116,7 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
         }
         // Retain this fragment across configuration changes.
         setRetainInstance(true);
+
     }
 
     @Override
@@ -123,6 +129,7 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
     public void onActivityCreated(Bundle savedInstanceState) {
         super.onActivityCreated(savedInstanceState);
         loadAndSetupViews();
+        setHasOptionsMenu(true);
         Bundle bundle = getArguments();
         Bundle extras = bundle.getBundle(EXTRAS);
         Bundle mediaWrapper = extras.getBundle(VideoCastManager.EXTRA_MEDIA);
@@ -155,6 +162,7 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
      *  Initialize Views
      */
     private void loadAndSetupViews() {
+        mediaRouteFeatureButton = (android.support.v7.app.MediaRouteButton)getView().findViewById(R.id.castConnectedButton);
         mPauseDrawable = getResources().getDrawable(R.drawable.ic_av_pause_dark);
         mPlayDrawable = getResources().getDrawable(R.drawable.ic_av_play_dark);
         mStopDrawable = getResources().getDrawable(R.drawable.ic_av_stop_dark);
@@ -170,6 +178,7 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
         mControllers = getView().findViewById(R.id.controllers);
         mCastThumbNail = (ImageView) getView().findViewById(R.id.castThumbNail);
         mClosedCaptionIcon = (ImageView) getView().findViewById(R.id.cc);
+        blurImage = (ImageView) getView().findViewById(R.id.blurImg);
         updateClosedCaption(CC_DISABLED);
         mPlayPause.setOnClickListener(new View.OnClickListener() {
 
@@ -495,7 +504,6 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
     public void onResume() {
         LOGD(TAG, "onResume() was called");
         try {
-            // TODO : CLOSE ACTIVITY SHOULD NOT BE USED -- REMOVE THIS LOGIC ***
             mCastManager = VideoCastManager.getInstance(getActivity());
             boolean shouldFinish = !mCastManager.isConnected()
                     || (mCastManager.getPlaybackStatus() == MediaStatus.PLAYER_STATE_IDLE
@@ -504,13 +512,9 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
             if (shouldFinish) {
                 //mCastController.closeActivity();
             }
-            // TODO : Check if it's new to be removed
-            //mCastManager.addVideoCastConsumer(mCastConsumer);
-            //mCastManager.incrementUiCounter();
             if (!mIsFresh) {
                 updatePlayerStatus();
             }
-
             // updating metadata in case someone else has changed it and we are resuming the
             // activity
             try {
@@ -575,6 +579,7 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
                     mUrlAndBitmap.mBitmap = bitmap;
                     mUrlAndBitmap.mUrl = url;
                     setImage(bitmap);
+                    blurImage.setImageBitmap(Utils.blurBitmap(bitmap,getActivity()));
                 }
                 if (this == mImageAsyncTask) {
                     mImageAsyncTask = null;
@@ -976,5 +981,17 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
     @Override
     public void closeActivity() {
         //finish();
+    }
+
+    @Override
+    public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
+        super.onCreateOptionsMenu(menu, inflater);
+        final MediaRouteButton mediaRouteButton = mCastManager.addMediaRouterButton(mediaRouteFeatureButton);
+        mediaRouteButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                mediaRouteButton.showDialog();
+            }
+        });
     }
 }

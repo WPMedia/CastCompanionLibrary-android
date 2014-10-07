@@ -15,4 +15,7 @@
     <color name="mr_custom_line_2">#AAFFFFFF</color>
     <color name="mr_custom_title">#33b5e5</color>
 
+    <color name="controller_title">#eeeeee</color>
+    <color name="controller_casting">#999999</color>
+
 </resources>

@@ -51,14 +51,27 @@ import android.widget.TextView;
  * mCastManager.addMiniController(mMiniController);
  * mMiniController.setOnMiniControllerChangedListener(mCastManager);
  * </pre>
- *
+ *:OTTCore:processPlayStoreDebugManifest UP-TO-DATE
+ :OTTCore:processPlayStoreDebugResources
+ :OTTCore:generatePlayStoreDebugSources
+ :OTTCore:compilePlayStoreDebugJava UP-TO-DATE
+ :OTTCore:preDexPlayStoreDebug UP-TO-DATE
+ :OTTCore:dexPlayStoreDebug UP-TO-DATE
+ :OTTCore:processPlayStoreDebugJavaRes UP-TO-DATE
+ :OTTCore:validateDebugSigning
+ :OTTCore:packagePlayStoreDebug
+ :OTTCore:zipalignPlayStoreDebug
+ :OTTCore:installPlayStoreDebug
+ 5219 KB/s (4471796 bytes in 0.836s)
+
+ pkg: /data/local/tmp/PostTV-v4.2.3-playStore-debug-SNAPSHOT.apk
  * Then the {@link VideoCastManager} will manage the behavior, including its state and metadata and
  * interactions.
  */
 public class MiniController extends RelativeLayout implements IMiniController {
 
     private static final String TAG = "MiniController";
-    //protected ImageView mIcon;
+    protected ImageView mIcon;
     protected TextView mTitle;
     protected TextView mSubTitle;
     protected ImageView mPlayPause;
@@ -83,9 +96,9 @@ public class MiniController extends RelativeLayout implements IMiniController {
         super(context, attrs);
         LayoutInflater inflater = LayoutInflater.from(context);
         inflater.inflate(R.layout.mini_controller, this);
-        mPauseDrawable = getResources().getDrawable(R.drawable.ic_mini_controller_pause);
-        mPlayDrawable = getResources().getDrawable(R.drawable.ic_mini_controller_play);
-        mStopDrawable = getResources().getDrawable(R.drawable.ic_mini_controller_stop);
+        mPauseDrawable = getResources().getDrawable(R.drawable.ic_av_pause_dark);
+        mPlayDrawable = getResources().getDrawable(R.drawable.ic_av_play_dark);
+        mStopDrawable = getResources().getDrawable(R.drawable.ic_av_stop_dark);
         loadViews();
         setupCallbacks();
     }
@@ -154,7 +167,7 @@ public class MiniController extends RelativeLayout implements IMiniController {
 
     @Override
     final public void setIcon(Bitmap bm) {
-        //mIcon.setImageBitmap(bm);
+        mIcon.setImageBitmap(bm);
     }
 
     @Override
@@ -251,7 +264,7 @@ public class MiniController extends RelativeLayout implements IMiniController {
     }
 
     private void loadViews() {
-        //mIcon = (ImageView) findViewById(R.id.iconView);
+        mIcon = (ImageView) findViewById(R.id.iconView);
         mTitle = (TextView) findViewById(R.id.titleView);
         mSubTitle = (TextView) findViewById(R.id.subTitleView);
         mPlayPause = (ImageView) findViewById(R.id.playPauseView);
