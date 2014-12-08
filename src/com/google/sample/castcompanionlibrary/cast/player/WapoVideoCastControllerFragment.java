@@ -364,7 +364,7 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
 
     private void updateClosedCaptionState() {
         int state = IVideoCastController.CC_HIDDEN;
-        if (mCastManager.isFeatureEnabled(VideoCastManager.FEATURE_CAPTIONS_PREFERENCE)
+        if (mCastManager != null && mCastManager.isFeatureEnabled(VideoCastManager.FEATURE_CAPTIONS_PREFERENCE)
                 && mSelectedMedia != null
                 && mCastManager.getTracksPreferenceManager().isCaptionEnabled()) {
             List<MediaTrack> tracks = mSelectedMedia.getMediaTracks();
