@@ -16,7 +16,26 @@
 
 package com.google.sample.castcompanionlibrary.utils;
 
-import static com.google.sample.castcompanionlibrary.utils.LogUtils.LOGE;
+import android.app.Activity;
+import android.app.AlertDialog;
+import android.app.Dialog;
+import android.content.Context;
+import android.content.DialogInterface;
+import android.content.SharedPreferences;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.RectF;
+import android.net.Uri;
+import android.net.wifi.WifiInfo;
+import android.net.wifi.WifiManager;
+import android.os.Build;
+import android.os.Bundle;
+import android.os.Parcelable;
+import android.preference.PreferenceManager;
+import android.support.v8.renderscript.*;
+import android.text.TextUtils;
+import android.util.Log;
+import android.widget.Toast;
 
 import com.google.android.gms.cast.MediaInfo;
 import com.google.android.gms.cast.MediaMetadata;
@@ -26,28 +45,14 @@ import com.google.android.gms.common.GooglePlayServicesUtil;
 import com.google.android.gms.common.images.WebImage;
 import com.google.sample.castcompanionlibrary.R;
 
-import android.app.Activity;
-import android.app.AlertDialog;
-import android.app.Dialog;
-import android.content.Context;
-import android.content.DialogInterface;
-import android.content.SharedPreferences;
-import android.net.Uri;
-import android.net.wifi.WifiInfo;
-import android.net.wifi.WifiManager;
-import android.os.Build;
-import android.os.Bundle;
-import android.os.Parcelable;
-import android.preference.PreferenceManager;
-import android.text.TextUtils;
-import android.widget.Toast;
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.List;
 
-import org.json.JSONArray;
-import org.json.JSONException;
-import org.json.JSONObject;
+import static com.google.sample.castcompanionlibrary.utils.LogUtils.LOGE;
 
 /**
  * A collection of utility methods, all static.
@@ -491,5 +496,73 @@ public class Utils {
             return wifiInfo.getSSID();
         }
         return null;
+    }
+
+
+    /**
+     * Using Instrinsic function of RenderScript to perform Gaussian blur
+     *
+     * @param inBitmap Image to be blurred
+     * @param context  Activity reference
+     */
+    public static Bitmap blurBitmap(Bitmap bitmap, Context context) {
+
+        //Let's create an empty bitmap with the same size of the bitmap we want to blur
+        Bitmap outBitmap = Bitmap.createBitmap(bitmap.getWidth(), bitmap.getHeight(), Bitmap.Config.ARGB_8888);
+        try {
+            //Instantiate a new Renderscript
+            RenderScript rs = RenderScript.create(context);
+
+            //Create an Intrinsic Blur Script using the Renderscript
+            ScriptIntrinsicBlur blurScript = ScriptIntrinsicBlur.create(rs, Element.U8_4(rs));
+
+            //Create the Allocations (in/out) with the Renderscript and the in/out bitmaps
+            Allocation allIn = Allocation.createFromBitmap(rs, bitmap);
+            Allocation allOut = Allocation.createFromBitmap(rs, outBitmap);
+
+            //Set the radius of the blur
+            blurScript.setRadius(25.f);
+
+            //Perform the Renderscript
+            blurScript.setInput(allIn);
+            blurScript.forEach(allOut);
+
+            //Copy the final bitmap created by the out Allocation to the outBitmap
+            allOut.copyTo(outBitmap);
+
+            //recycle the original bitmap
+            //bitmap.recycle();
+
+            //After finishing everything, we destroy the Renderscript.
+            rs.destroy();
+        } catch (Exception e) {
+            Log.e(TAG, e.getMessage());
+        }
+        return outBitmap;
+    }
+    /**
+     * Scale and center-crop a bitmap to fit the given dimensions.
+     */
+    public static Bitmap scaleCenterCrop(Bitmap source, int newHeight, int newWidth) {
+        int sourceWidth = source.getWidth();
+        int sourceHeight = source.getHeight();
+
+        float xScale = (float) newWidth / sourceWidth;
+        float yScale = (float) newHeight / sourceHeight;
+        float scale = Math.max(xScale, yScale);
+
+        float scaledWidth = scale * sourceWidth;
+        float scaledHeight = scale * sourceHeight;
+
+        float left = (newWidth - scaledWidth) / 2;
+        float top = (newHeight - scaledHeight) / 2;
+
+        RectF targetRect = new RectF(left, top, left + scaledWidth, top + scaledHeight);
+
+        Bitmap destination = Bitmap.createBitmap(newWidth, newHeight, source.getConfig());
+        Canvas canvas = new Canvas(destination);
+        canvas.drawBitmap(source, null, targetRect, null);
+
+        return destination;
     }
 }

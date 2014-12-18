@@ -3,9 +3,9 @@
 CastCompanionLibrary-android is a library project to enable developers integrate Cast capabilities into their applications faster and easier.
 
 ## Dependencies
-* google-play-services_lib library from the Android SDK (at least version 4.3)
-* android-support-v7-appcompat (version 19.0.1 or above)
-* android-support-v7-mediarouter (version 19.0.1 or above)
+* google-play-services_lib library from the Android SDK (at least version 6.1)
+* android-support-v7-appcompat (version 21 or above)
+* android-support-v7-mediarouter (version 20 or above)
 
 ## Setup Instructions
 * Set up the project dependencies
@@ -29,6 +29,13 @@ See LICENSE
 Google Cast Developers Community on Google+ [http://goo.gl/TPLDxj](http://goo.gl/TPLDxj)
 
 ## Change List
+1.11
+ * Added support for Notifications and Lock Screen controls (via Notifications) on Android Lollipop.
+ * Updated dependencies to use Google Play Services 6.1 and Support Libraries v21.
+ * Added Toolbar as a replacement for ActionBar.
+ * Added support for Android Studio 0.9.1 and updated gradle support to the latest versions.
+ * Fixed issues 74, 110, 115, 119.
+
 1.10
  * Added support for Tracks and Closed Captions. See the documentation for details.
  * Refactored image loading across the library.

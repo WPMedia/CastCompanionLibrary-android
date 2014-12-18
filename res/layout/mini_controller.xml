@@ -5,13 +5,15 @@
     android:layout_height="wrap_content"
     android:paddingTop="0dp" >
 
-    <!--<ImageView-->
-        <!--android:id="@+id/iconView"-->
-        <!--android:layout_width="@dimen/mini_controller_icon_width"-->
-        <!--android:layout_height="@dimen/mini_controller_icon_height"-->
-        <!--android:layout_alignParentLeft="true"-->
-        <!--android:layout_marginLeft="7dp"-->
-        <!--android:src="@drawable/mini_controller_img_placeholder"/>-->
+    <ImageView
+        android:layout_marginTop="6dp"
+        android:id="@+id/iconView"
+        android:layout_width="@dimen/mini_controller_icon_width"
+        android:layout_height="@dimen/mini_controller_icon_height"
+        android:layout_alignParentLeft="true"
+        android:layout_marginLeft="7dp"
+        android:layout_marginBottom="7dp"
+        android:src="@drawable/mini_controller_img_placeholder"/>
 
     <ImageView
         android:id="@+id/playPauseView"
@@ -20,7 +22,7 @@
         android:layout_alignParentRight="true"
         android:layout_centerVertical="true"
         android:layout_marginRight="4dp"
-        android:src="@drawable/ic_mini_controller_pause"/>
+        android:src="@drawable/ic_av_pause_dark"/>
 
     <ProgressBar
         android:id="@+id/loadingView"
@@ -39,11 +41,13 @@
         android:layout_height="wrap_content"
         android:layout_marginLeft="10dp"
         android:layout_marginRight="5dp"
-        android:layout_marginTop="6dp"
         android:layout_toLeftOf="@+id/playPauseView"
+        android:layout_toRightOf="@+id/iconView"
+        android:layout_alignTop="@+id/iconView"
         android:ellipsize="end"
         android:maxLines="1"
-        android:textSize="@dimen/mini_controller_font_size_line1"/>
+        android:textSize="@dimen/mini_controller_font_size_line1"
+        android:textColor="@color/controller_title"/>
 
     <TextView
         android:id="@+id/subTitleView"
@@ -52,10 +56,12 @@
         android:layout_below="@id/titleView"
         android:layout_alignLeft="@+id/titleView"
         android:layout_alignRight="@+id/titleView"
-        android:layout_marginBottom="7dp"
         android:layout_toLeftOf="@+id/playPauseView"
         android:ellipsize="end"
         android:maxLines="1"
-        android:textSize="@dimen/mini_controller_font_size_line2"/>
+        android:textSize="@dimen/mini_controller_font_size_line2"
+        android:layout_toRightOf="@+id/iconView"
+        android:layout_alignBottom="@+id/iconView"
+        android:textColor="@color/controller_casting"/>
 
 </RelativeLayout>
