@@ -3,7 +3,7 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:0.12.2'
+        classpath 'com.android.tools.build:gradle:1.0.0-rc2'
     }
 }
 
@@ -15,16 +15,16 @@ apply plugin: 'com.android.library'
 
 android {
     compileSdkVersion 21
-    buildToolsVersion "21.1.1"
+    buildToolsVersion "21.1.2"
     publishNonDefault true
-    defaultPublishConfig "debug"
+    defaultPublishConfig "release"
 
 
     defaultConfig {
         minSdkVersion 10
         targetSdkVersion 21
-        renderscriptTargetApi 21
-        renderscriptSupportMode true
+        renderscriptTargetApi 19
+        renderscriptSupportModeEnabled true
     }
 
     sourceSets {

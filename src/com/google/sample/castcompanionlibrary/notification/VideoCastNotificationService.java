@@ -358,7 +358,7 @@ public class VideoCastNotificationService extends Service {
         return rv;
     }
 
-    @TargetApi(Build.VERSION_CODES.L)
+    @TargetApi(Build.VERSION_CODES.LOLLIPOP)
     private void buildForLollipopAndAbove(MediaInfo info, Bitmap bitmap, boolean isPlaying)
             throws CastException, TransientNetworkDisconnectionException, NoConnectionException {
 
