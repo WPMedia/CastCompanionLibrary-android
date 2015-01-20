@@ -16,8 +16,14 @@
 
 package com.google.sample.castcompanionlibrary.utils;
 
+import static com.google.sample.castcompanionlibrary.utils.LogUtils.LOGE;
+import com.google.android.gms.cast.MediaInfo;
+import com.google.android.gms.cast.MediaMetadata;
+import com.google.android.gms.cast.MediaTrack;
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.GooglePlayServicesUtil;
+import com.google.android.gms.common.images.WebImage;
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.Context;
 import android.content.DialogInterface;
@@ -106,37 +112,6 @@ public class Utils {
             result += "0" + sec;
         }
         return result;
-    }
-
-    /**
-     * A utility method to show a simple error dialog. The textual content of the dialog is
-     * provided through the passed-in resource id.
-     *
-     * @param context
-     * @param resourceId
-     */
-    public static final void showErrorDialog(Context context, int resourceId) {
-        //showErrorDialog(context, context.getString(resourceId));
-        showToast(context.getApplicationContext(), resourceId);
-    }
-
-    /**
-     * A utility method to show a simple error dialog.
-     *
-     * @param context
-     * @param message The message to be shown in the dialog
-     */
-    public static final void showErrorDialog(Context context, String message) {
-        new AlertDialog.Builder(context).setTitle(R.string.error)
-                .setMessage(message)
-                .setPositiveButton(R.string.ok, new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface dialog, int id) {
-                        dialog.cancel();
-                    }
-                })
-                .create()
-                .show();
     }
 
     /**
@@ -240,6 +215,24 @@ public class Utils {
     }
 
     /**
+     * Saves a boolean value under the provided key in the preference manager. If <code>value</code>
+     * is <code>null</code>, then the provided key will be removed from the preferences.
+     *
+     * @param context
+     * @param key
+     * @param value
+     */
+    public static void saveBooleanToPreference(Context context, String key, Boolean value) {
+        SharedPreferences pref = PreferenceManager.getDefaultSharedPreferences(context);
+        if (value == null) {
+            // we want to remove
+            pref.edit().remove(key).apply();
+        } else {
+            pref.edit().putBoolean(key, value).apply();
+        }
+    }
+
+    /**
      * Retrieves a String value from preference manager. If no such key exists, it will return
      * <code>null</code>.
      *
@@ -336,13 +329,6 @@ public class Utils {
                 dialog.show();
         }
         return false;
-    }
-
-    /**
-     * @deprecated See <code>checkGooglePlayServices</code>
-     */
-    public static boolean checkGooglePlaySevices(final Activity activity) {
-        return checkGooglePlayServices(activity);
     }
 
     /**
@@ -473,14 +459,19 @@ public class Utils {
                 LOGE(TAG, "Failed to build media tracks from the wrapper bundle", e);
             }
         }
-        return new MediaInfo.Builder(wrapper.getString(KEY_URL))
+        MediaInfo.Builder mediaBuilder = new MediaInfo.Builder(wrapper.getString(KEY_URL))
                 .setStreamType(wrapper.getInt(KEY_STREAM_TYPE))
                 .setContentType(wrapper.getString(KEY_CONTENT_TYPE))
                 .setMetadata(metaData)
                 .setCustomData(customData)
-                .setMediaTracks(mediaTracks)
-                .setStreamDuration(wrapper.getLong(KEY_STREAM_DURATION))
-                .build();
+                .setMediaTracks(mediaTracks);
+
+        if (wrapper.containsKey(KEY_STREAM_DURATION)
+                && wrapper.getLong(KEY_STREAM_DURATION) >= 0) {
+            mediaBuilder.setStreamDuration(wrapper.getLong(KEY_STREAM_DURATION));
+        }
+
+        return mediaBuilder.build();
     }
 
     /**
@@ -544,6 +535,9 @@ public class Utils {
      * Scale and center-crop a bitmap to fit the given dimensions.
      */
     public static Bitmap scaleCenterCrop(Bitmap source, int newHeight, int newWidth) {
+        if (source == null) {
+            return null;
+        }
         int sourceWidth = source.getWidth();
         int sourceHeight = source.getHeight();
 
