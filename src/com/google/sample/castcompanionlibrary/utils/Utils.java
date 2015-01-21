@@ -167,12 +167,14 @@ public class Utils {
      * @param value
      */
     public static void saveStringToPreference(Context context, String key, String value) {
-        SharedPreferences pref = PreferenceManager.getDefaultSharedPreferences(context);
-        if (null == value) {
-            // we want to remove
-            pref.edit().remove(key).apply();
-        } else {
-            pref.edit().putString(key, value).apply();
+        if(context != null) {
+            SharedPreferences pref = PreferenceManager.getDefaultSharedPreferences(context);
+            if (null == value) {
+                // we want to remove
+                pref.edit().remove(key).apply();
+            } else {
+                pref.edit().putString(key, value).apply();
+            }
         }
     }
 
@@ -204,14 +206,15 @@ public class Utils {
      * @param value
      */
     public static void saveLongToPreference(Context context, String key, long value) {
-        SharedPreferences pref = PreferenceManager.getDefaultSharedPreferences(context);
-        if (Long.MIN_VALUE == value) {
-            // we want to remove
-            pref.edit().remove(key).apply();
-        } else {
-            pref.edit().putLong(key, value).apply();
+        if(context != null) {
+            SharedPreferences pref = PreferenceManager.getDefaultSharedPreferences(context);
+            if (Long.MIN_VALUE == value) {
+                // we want to remove
+                pref.edit().remove(key).apply();
+            } else {
+                pref.edit().putLong(key, value).apply();
+            }
         }
-
     }
 
     /**
@@ -223,12 +226,14 @@ public class Utils {
      * @param value
      */
     public static void saveBooleanToPreference(Context context, String key, Boolean value) {
-        SharedPreferences pref = PreferenceManager.getDefaultSharedPreferences(context);
-        if (value == null) {
-            // we want to remove
-            pref.edit().remove(key).apply();
-        } else {
-            pref.edit().putBoolean(key, value).apply();
+        if(context != null) {
+            SharedPreferences pref = PreferenceManager.getDefaultSharedPreferences(context);
+            if (value == null) {
+                // we want to remove
+                pref.edit().remove(key).apply();
+            } else {
+                pref.edit().putBoolean(key, value).apply();
+            }
         }
     }
 

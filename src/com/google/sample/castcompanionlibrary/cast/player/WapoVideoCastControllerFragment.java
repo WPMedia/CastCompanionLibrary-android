@@ -12,6 +12,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.support.v4.app.DialogFragment;
 import android.support.v4.app.Fragment;
+import android.support.v4.app.FragmentTransaction;
 import android.support.v7.app.MediaRouteButton;
 import android.text.TextUtils;
 import android.view.LayoutInflater;
@@ -33,6 +34,7 @@ import com.google.sample.castcompanionlibrary.cast.VideoCastManager;
 import com.google.sample.castcompanionlibrary.cast.exceptions.CastException;
 import com.google.sample.castcompanionlibrary.cast.exceptions.NoConnectionException;
 import com.google.sample.castcompanionlibrary.cast.exceptions.TransientNetworkDisconnectionException;
+import com.google.sample.castcompanionlibrary.cast.tracks.ui.TracksChooserDialog;
 import com.google.sample.castcompanionlibrary.utils.FetchBitmapTask;
 import com.google.sample.castcompanionlibrary.utils.LogUtils;
 import com.google.sample.castcompanionlibrary.utils.Utils;
@@ -101,7 +103,7 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
         sDialogCanceled = false;
         mHandler = new Handler();
         try {
-            mCastManager = VideoCastManager.getInstance(activity);
+            mCastManager = VideoCastManager.getInstance();
         } catch (CastException e) {
             LOGE(TAG, e.getMessage());
         }
@@ -134,6 +136,17 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
         Bundle extras = bundle.getBundle(EXTRAS);
         Bundle mediaWrapper = extras.getBundle(VideoCastManager.EXTRA_MEDIA);
 
+        mCastManager.addTracksSelectedListener(this);
+        // NOTE : We don't need this logic.
+//        boolean explicitStartActivity = false;
+//        Utils.getBooleanFromPreference(getActivity(),
+//                VideoCastManager.PREFS_KEY_START_ACTIVITY, false);
+//        if (explicitStartActivity) {
+//            mIsFresh = true;
+//        }
+        Utils.saveBooleanToPreference(getActivity(), VideoCastManager.PREFS_KEY_START_ACTIVITY,
+                false);
+
         if (extras.getBoolean(VideoCastManager.EXTRA_HAS_AUTH)) {
             mOverallState = OverallState.AUTHORIZING;
             mMediaAuthService = mCastManager.getMediaAuthService();
@@ -155,6 +168,7 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
             MediaInfo info = Utils.toMediaInfo(mediaWrapper);
             int startPoint = extras.getInt(VideoCastManager.EXTRA_START_POINT, 0);
             onReady(info, shouldStartPlayback, startPoint, customData);
+            //onReady(info, shouldStartPlayback && explicitStartActivity, startPoint, customData);
         }
     }
 
@@ -188,15 +202,15 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
                     onPlayPauseClicked(v);
                 } catch (TransientNetworkDisconnectionException e) {
                     LOGE(TAG, "Failed to toggle playback due to temporary network issue", e);
-                    Utils.showErrorDialog(getActivity(),
+                    Utils.showToast(getActivity(),
                             R.string.failed_no_connection_trans);
                 } catch (NoConnectionException e) {
                     LOGE(TAG, "Failed to toggle playback due to network issues", e);
-                    Utils.showErrorDialog(getActivity(),
+                    Utils.showToast(getActivity(),
                             R.string.failed_no_connection);
                 } catch (Exception e) {
                     LOGE(TAG, "Failed to toggle playback due to other issues", e);
-                    Utils.showErrorDialog(getActivity(),
+                    Utils.showToast(getActivity(),
                             R.string.failed_perform_action);
                 }
             }
@@ -233,6 +247,34 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
                 }
             }
         });
+
+        mClosedCaptionIcon.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                try {
+                    showTracksChooserDialog();
+                } catch (TransientNetworkDisconnectionException e) {
+                    LOGE(TAG, "Failed to get the media", e);
+                } catch (NoConnectionException e) {
+                    LOGE(TAG, "Failed to get the media", e);
+                }
+            }
+        });
+    }
+
+    private void showTracksChooserDialog()
+            throws TransientNetworkDisconnectionException, NoConnectionException {
+        FragmentTransaction transaction = getActivity().getSupportFragmentManager().beginTransaction();
+        Fragment prev = getActivity().getSupportFragmentManager().findFragmentByTag("dialog");
+        if (prev != null) {
+            transaction.remove(prev);
+        }
+        transaction.addToBackStack(null);
+
+        // Create and show the dialog.
+        TracksChooserDialog dialogFragment = TracksChooserDialog
+                .newInstance(mCastManager.getRemoteMediaInformation());
+        dialogFragment.show(transaction, "dialog");
     }
 
     /*
@@ -502,34 +544,54 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
 
     @Override
     public void onResume() {
+        super.onResume();
         LOGD(TAG, "onResume() was called");
         try {
-            mCastManager = VideoCastManager.getInstance(getActivity());
-            boolean shouldFinish = !mCastManager.isConnected()
-                    || (mCastManager.getPlaybackStatus() == MediaStatus.PLAYER_STATE_IDLE
-                    && mCastManager.getIdleReason() == MediaStatus.IDLE_REASON_FINISHED
-                    && !mIsFresh);
-            if (shouldFinish) {
-                //mCastController.closeActivity();
+            mCastManager = VideoCastManager.getInstance();
+
+            try {
+                if (mCastManager.isRemoteMoviePaused() || mCastManager.isRemoteMoviePlaying()) {
+                    if (mCastManager.getRemoteMediaInformation() != null &&
+                            mSelectedMedia.getContentId()
+                                    .equals(mCastManager.getRemoteMediaInformation()
+                                            .getContentId())) {
+                        mIsFresh = false;
+                    }
+                }
+            } catch (TransientNetworkDisconnectionException e) {
+                LOGE(TAG, "Failed getting status of media playback", e);
+            } catch (NoConnectionException e) {
+                LOGE(TAG, "Failed getting status of media playback", e);
             }
+
+            boolean shouldFinish = false;
+            if (!mCastManager.isConnecting()) {
+                shouldFinish = !(mCastManager.isConnected())
+                        || (mCastManager.getPlaybackStatus() == MediaStatus.PLAYER_STATE_IDLE
+                        && mCastManager.getIdleReason() == MediaStatus.IDLE_REASON_FINISHED);
+                if (shouldFinish && !mIsFresh) {
+                    //mCastController.closeActivity();
+                    return;
+                }
+            }
+
             if (!mIsFresh) {
                 updatePlayerStatus();
-            }
-            // updating metadata in case someone else has changed it and we are resuming the
-            // activity
-            try {
-                mSelectedMedia = mCastManager.getRemoteMediaInformation();
-                updateClosedCaptionState();
-                updateMetadata();
-            } catch (TransientNetworkDisconnectionException e) {
-                LOGE(TAG, "Failed to update the metadata due to network issues", e);
-            } catch (NoConnectionException e) {
-                LOGE(TAG, "Failed to update the metadata due to network issues", e);
+                // updating metadata in case someone else has changed it and we are resuming the
+                // activity
+                try {
+                    mSelectedMedia = mCastManager.getRemoteMediaInformation();
+                    updateClosedCaptionState();
+                    updateMetadata();
+                } catch (TransientNetworkDisconnectionException e) {
+                    LOGE(TAG, "Failed to update the metadata due to network issues", e);
+                } catch (NoConnectionException e) {
+                    LOGE(TAG, "Failed to update the metadata due to network issues", e);
+                }
             }
         } catch (CastException e) {
             // logged already
         }
-        super.onResume();
     }
 
     @Override
@@ -730,7 +792,8 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
         try {
             mSelectedMedia = mCastManager.getRemoteMediaInformation();
             updateMetadata();
-        } catch (TransientNetworkDisconnectionException e) {
+        }
+        catch (TransientNetworkDisconnectionException e) {
             LOGE(TAG, "Failed to update the metadata due to network issues", e);
         } catch (NoConnectionException e) {
             LOGE(TAG, "Failed to update the metadata due to network issues", e);
@@ -748,11 +811,11 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
                 mMediaAuthTimer.cancel();
             }
             mSelectedMedia = info;
-            updateClosedCaptionState();
             mHandler.post(new Runnable() {
 
                 @Override
                 public void run() {
+                    updateClosedCaptionState();
                     mOverallState = OverallState.PLAYBACK;
                     onReady(info, true, startPoint, customData);
                 }
@@ -849,6 +912,9 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
         if (!sDialogCanceled && null != mMediaAuthService) {
             mMediaAuthService.abort(MediaAuthStatus.ABORT_USER_CANCELLED);
         }
+
+        mCastManager.clearContext(getActivity());
+        mCastManager.removeTracksSelectedListener(this);
     }
 
     // -------------- IVideoCastController implementation ---------------- //
