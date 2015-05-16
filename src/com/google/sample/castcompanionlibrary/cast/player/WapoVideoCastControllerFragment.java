@@ -29,15 +29,20 @@ import com.google.android.gms.cast.MediaInfo;
 import com.google.android.gms.cast.MediaMetadata;
 import com.google.android.gms.cast.MediaStatus;
 import com.google.android.gms.cast.MediaTrack;
-import com.google.sample.castcompanionlibrary.R;
-import com.google.sample.castcompanionlibrary.cast.VideoCastManager;
-import com.google.sample.castcompanionlibrary.cast.exceptions.CastException;
-import com.google.sample.castcompanionlibrary.cast.exceptions.NoConnectionException;
-import com.google.sample.castcompanionlibrary.cast.exceptions.TransientNetworkDisconnectionException;
-import com.google.sample.castcompanionlibrary.cast.tracks.ui.TracksChooserDialog;
-import com.google.sample.castcompanionlibrary.utils.FetchBitmapTask;
-import com.google.sample.castcompanionlibrary.utils.LogUtils;
-import com.google.sample.castcompanionlibrary.utils.Utils;
+import com.google.android.libraries.cast.companionlibrary.R;
+import com.google.android.libraries.cast.companionlibrary.cast.VideoCastManager;
+import com.google.android.libraries.cast.companionlibrary.cast.exceptions.CastException;
+import com.google.android.libraries.cast.companionlibrary.cast.exceptions.NoConnectionException;
+import com.google.android.libraries.cast.companionlibrary.cast.exceptions.TransientNetworkDisconnectionException;
+import com.google.android.libraries.cast.companionlibrary.cast.player.MediaAuthListener;
+import com.google.android.libraries.cast.companionlibrary.cast.player.MediaAuthService;
+import com.google.android.libraries.cast.companionlibrary.cast.player.MediaAuthStatus;
+import com.google.android.libraries.cast.companionlibrary.cast.player.OnVideoCastControllerListener;
+import com.google.android.libraries.cast.companionlibrary.cast.player.VideoCastController;
+import com.google.android.libraries.cast.companionlibrary.cast.tracks.ui.TracksChooserDialog;
+import com.google.android.libraries.cast.companionlibrary.utils.FetchBitmapTask;
+import com.google.android.libraries.cast.companionlibrary.utils.LogUtils;
+import com.google.android.libraries.cast.companionlibrary.utils.Utils;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -46,8 +51,8 @@ import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
 
-import static com.google.sample.castcompanionlibrary.utils.LogUtils.LOGD;
-import static com.google.sample.castcompanionlibrary.utils.LogUtils.LOGE;
+import static com.google.android.libraries.cast.companionlibrary.utils.LogUtils.LOGD;
+import static com.google.android.libraries.cast.companionlibrary.utils.LogUtils.LOGE;
 
 /**
  * Created by mehtam2 on 8/22/14.
@@ -56,12 +61,15 @@ import static com.google.sample.castcompanionlibrary.utils.LogUtils.LOGE;
  * All logic of establishing communication with CC is moved to our MainActivity.
  */
 public class WapoVideoCastControllerFragment extends Fragment implements OnVideoCastControllerListener,
-        IMediaAuthListener, IVideoCastController {
+        MediaAuthListener, VideoCastController {
+
+    public static final String TASK_TAG = "task";
+    public static final String DIALOG_TAG = "dialog";
     private static final String EXTRAS = "extras";
     private static final String TAG = LogUtils.makeLogTag(WapoVideoCastControllerFragment.class);
     private MediaInfo mSelectedMedia;
     private VideoCastManager mCastManager;
-    private IMediaAuthService mMediaAuthService;
+    private MediaAuthService mMediaAuthService;
     private Thread mAuthThread;
     private Timer mMediaAuthTimer;
     private Handler mHandler;
@@ -91,9 +99,10 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
     private ImageView mClosedCaptionIcon;
     private ImageView blurImage;
     private android.support.v7.app.MediaRouteButton mediaRouteFeatureButton;
+    private VideoCastController mCastController;
 
     private enum OverallState {
-        AUTHORIZING, PLAYBACK, UNKNOWN;
+        AUTHORIZING, PLAYBACK, UNKNOWN
     }
 
     // ------- Overriding of Fragment interface ----------------- //
@@ -101,12 +110,9 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
     public void onAttach(Activity activity) {
         super.onAttach(activity);
         sDialogCanceled = false;
+        mCastController = (VideoCastController) activity;
         mHandler = new Handler();
-        try {
-            mCastManager = VideoCastManager.getInstance();
-        } catch (CastException e) {
-            LOGE(TAG, e.getMessage());
-        }
+        mCastManager = VideoCastManager.getInstance();
     }
 
     @Override
@@ -165,7 +171,7 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
                             + customDataStr, e);
                 }
             }
-            MediaInfo info = Utils.toMediaInfo(mediaWrapper);
+            MediaInfo info = Utils.bundleToMediaInfo(mediaWrapper);
             int startPoint = extras.getInt(VideoCastManager.EXTRA_START_POINT, 0);
             onReady(info, shouldStartPlayback, startPoint, customData);
             //onReady(info, shouldStartPlayback && explicitStartActivity, startPoint, customData);
@@ -203,15 +209,15 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
                 } catch (TransientNetworkDisconnectionException e) {
                     LOGE(TAG, "Failed to toggle playback due to temporary network issue", e);
                     Utils.showToast(getActivity(),
-                            R.string.failed_no_connection_trans);
+                            R.string.ccl_failed_no_connection_trans);
                 } catch (NoConnectionException e) {
                     LOGE(TAG, "Failed to toggle playback due to network issues", e);
                     Utils.showToast(getActivity(),
-                            R.string.failed_no_connection);
+                            R.string.ccl_failed_no_connection);
                 } catch (Exception e) {
                     LOGE(TAG, "Failed to toggle playback due to other issues", e);
                     Utils.showToast(getActivity(),
-                            R.string.failed_perform_action);
+                            R.string.ccl_failed_perform_action);
                 }
             }
         });
@@ -265,7 +271,7 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
     private void showTracksChooserDialog()
             throws TransientNetworkDisconnectionException, NoConnectionException {
         FragmentTransaction transaction = getActivity().getSupportFragmentManager().beginTransaction();
-        Fragment prev = getActivity().getSupportFragmentManager().findFragmentByTag("dialog");
+        Fragment prev = getActivity().getSupportFragmentManager().findFragmentByTag(DIALOG_TAG);
         if (prev != null) {
             transaction.remove(prev);
         }
@@ -274,29 +280,25 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
         // Create and show the dialog.
         TracksChooserDialog dialogFragment = TracksChooserDialog
                 .newInstance(mCastManager.getRemoteMediaInformation());
-        dialogFragment.show(transaction, "dialog");
+        dialogFragment.show(transaction, DIALOG_TAG);
     }
 
     /*
      * Starts a background thread for starting the Auth Service
      */
-    private void handleMediaAuthTask(final IMediaAuthService authService) {
-        showLoading(true);
-        setLine2(null != authService.getPendingMessage()
+    private void handleMediaAuthTask(final MediaAuthService authService) {
+        mCastController.showLoading(true);
+        if (authService == null) {
+            return;
+        }
+        mCastController.setSubTitle(authService.getPendingMessage() != null
                 ? authService.getPendingMessage() : "");
         mAuthThread = new Thread(new Runnable() {
 
             @Override
             public void run() {
-                if (null != authService) {
-                    try {
-                        authService.setOnResult(WapoVideoCastControllerFragment.this);
-                        authService.start();
-                    } catch (Exception e) {
-                        LOGE(TAG, "mAuthService.start() encountered exception", e);
-                        mAuthSuccess = false;
-                    }
-                }
+                authService.setMediaAuthListener(WapoVideoCastControllerFragment.this);
+                authService.startAuthorization();
             }
         });
         mAuthThread.start();
@@ -328,11 +330,11 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
                     @Override
                     public void run() {
                         showLoading(false);
-                        showErrorDialog(getString(R.string.failed_authorization_timeout));
+                        showErrorDialog(getString(R.string.ccl_failed_authorization_timeout));
                         mAuthSuccess = false;
                         if (null != mMediaAuthService
                                 && mMediaAuthService.getStatus() == MediaAuthStatus.PENDING) {
-                            mMediaAuthService.abort(MediaAuthStatus.ABORT_TIMEOUT);
+                            mMediaAuthService.abortAuthorization(MediaAuthStatus.TIMED_OUT);
                         }
                     }
                 });
@@ -361,7 +363,7 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
                         if (duration > 0) {
                             try {
                                 currentPos = (int) mCastManager.getCurrentMediaPosition();
-                                updateSeekbar(currentPos, duration);
+                                mCastController.updateSeekbar(currentPos, duration);
                             } catch (Exception e) {
                                 LOGE(TAG, "Failed to get current media position", e);
                             }
@@ -431,14 +433,17 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
     }
 
     private void updateOverallState() {
-        IMediaAuthService authService;
+        MediaAuthService authService;
         switch (mOverallState) {
             case AUTHORIZING:
                 authService = mCastManager.getMediaAuthService();
                 if (null != authService) {
-                    setLine2(null != authService.getPendingMessage()
+//                    setLine2(null != authService.getPendingMessage()
+//                            ? authService.getPendingMessage() : "");
+//                    showLoading(true);
+                    mCastController.setSubTitle(authService.getPendingMessage() != null
                             ? authService.getPendingMessage() : "");
-                    showLoading(true);
+                    mCastController.showLoading(true);
                 }
                 break;
             case PLAYBACK:
@@ -657,7 +662,7 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
      */
     public static class ErrorDialogFragment extends DialogFragment {
 
-        private IVideoCastController mController;
+        private VideoCastController mController;
         private static final String MESSAGE = "message";
 
         public static ErrorDialogFragment newInstance(String message) {
@@ -670,7 +675,7 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
 
         @Override
         public void onAttach(Activity activity) {
-            mController = (IVideoCastController) activity;
+            mController = (VideoCastController) activity;
             super.onAttach(activity);
             setCancelable(false);
         }
@@ -679,9 +684,9 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
         public Dialog onCreateDialog(Bundle savedInstanceState) {
             String message = getArguments().getString(MESSAGE);
             return new AlertDialog.Builder(getActivity())
-                    .setTitle(R.string.error)
+                    .setTitle(R.string.ccl_error)
                     .setMessage(message)
-                    .setPositiveButton(R.string.ok, new DialogInterface.OnClickListener() {
+                    .setPositiveButton(R.string.ccl_ok, new DialogInterface.OnClickListener() {
 
                         @Override
                         public void onClick(DialogInterface dialog, int which) {
@@ -801,27 +806,76 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
     }
 
     // ------- Implementation of IMediaAuthListener interface --------------------------- //
+//    @Override
+//    public void onResult(MediaAuthStatus status, final MediaInfo info, final String message,
+//                         final int startPoint, final JSONObject customData) {
+//        if (status == MediaAuthStatus.RESULT_AUTHORIZED && mAuthSuccess) {
+//            // successful authorization
+//            mMediaAuthService = null;
+//            if (null != mMediaAuthTimer) {
+//                mMediaAuthTimer.cancel();
+//            }
+//            mSelectedMedia = info;
+//            mHandler.post(new Runnable() {
+//
+//                @Override
+//                public void run() {
+//                    updateClosedCaptionState();
+//                    mOverallState = OverallState.PLAYBACK;
+//                    onReady(info, true, startPoint, customData);
+//                }
+//            });
+//        } else {
+//            if (null != mMediaAuthTimer) {
+//                mMediaAuthTimer.cancel();
+//            }
+//            mHandler.post(new Runnable() {
+//                @Override
+//                public void run() {
+//                    mOverallState = OverallState.UNKNOWN;
+//                    showErrorDialog(message);
+//                }
+//            });
+//
+//        }
+//    }
+//
+//    @Override
+//    public void onFailure(final String failureMessage) {
+//        if (null != mMediaAuthTimer) {
+//            mMediaAuthTimer.cancel();
+//        }
+//        mHandler.post(new Runnable() {
+//
+//            @Override
+//            public void run() {
+//                mOverallState = OverallState.UNKNOWN;
+//                showErrorDialog(failureMessage);
+//            }
+//        });
+//
+//    }
     @Override
-    public void onResult(MediaAuthStatus status, final MediaInfo info, final String message,
-                         final int startPoint, final JSONObject customData) {
-        if (status == MediaAuthStatus.RESULT_AUTHORIZED && mAuthSuccess) {
+    public void onAuthResult(MediaAuthStatus status, final MediaInfo info, final String message,
+                             final int startPoint, final JSONObject customData) {
+        if (status == MediaAuthStatus.AUTHORIZED && mAuthSuccess) {
             // successful authorization
             mMediaAuthService = null;
-            if (null != mMediaAuthTimer) {
+            if (mMediaAuthTimer != null) {
                 mMediaAuthTimer.cancel();
             }
             mSelectedMedia = info;
+            updateClosedCaptionState();
             mHandler.post(new Runnable() {
 
                 @Override
                 public void run() {
-                    updateClosedCaptionState();
                     mOverallState = OverallState.PLAYBACK;
                     onReady(info, true, startPoint, customData);
                 }
             });
         } else {
-            if (null != mMediaAuthTimer) {
+            if (mMediaAuthTimer != null) {
                 mMediaAuthTimer.cancel();
             }
             mHandler.post(new Runnable() {
@@ -836,8 +890,8 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
     }
 
     @Override
-    public void onFailure(final String failureMessage) {
-        if (null != mMediaAuthTimer) {
+    public void onAuthFailure(final String failureMessage) {
+        if (mMediaAuthTimer != null) {
             mMediaAuthTimer.cancel();
         }
         mHandler.post(new Runnable() {
@@ -888,7 +942,7 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
      * Cleanup of threads and timers and bitmap and ...
      */
     private void cleanup() {
-        IMediaAuthService authService = mCastManager.getMediaAuthService();
+        MediaAuthService authService = mCastManager.getMediaAuthService();
         if (null != mMediaAuthTimer) {
             mMediaAuthTimer.cancel();
         }
@@ -896,7 +950,7 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
             mAuthThread = null;
         }
         if (null != mCastManager.getMediaAuthService()) {
-            authService.setOnResult(null);
+            authService.setMediaAuthListener(null);
             mCastManager.removeMediaAuthService();
         }
         if (null != mCastManager) {
@@ -910,10 +964,10 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
             mUrlAndBitmap.mBitmap = null;
         }
         if (!sDialogCanceled && null != mMediaAuthService) {
-            mMediaAuthService.abort(MediaAuthStatus.ABORT_USER_CANCELLED);
+            mMediaAuthService.abortAuthorization(MediaAuthStatus.CANCELED_BY_USER);
         }
 
-        mCastManager.clearContext(getActivity());
+        //mCastManager.clearContext(getActivity());
         mCastManager.removeTracksSelectedListener(this);
     }
 
@@ -963,7 +1017,7 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
                     mPlayPause.setImageDrawable(mPauseDrawable);
                 }
 
-                mLine2.setText(getString(R.string.casting_to_device,
+                mLine2.setText(getString(R.string.ccl_casting_to_device,
                         mCastManager.getDeviceName()));
                 mControllers.setVisibility(View.VISIBLE);
                 break;
@@ -972,20 +1026,20 @@ public class WapoVideoCastControllerFragment extends Fragment implements OnVideo
                 mLoading.setVisibility(View.INVISIBLE);
                 mPlayPause.setVisibility(View.VISIBLE);
                 mPlayPause.setImageDrawable(mPlayDrawable);
-                mLine2.setText(getString(R.string.casting_to_device,
+                mLine2.setText(getString(R.string.ccl_casting_to_device,
                         mCastManager.getDeviceName()));
                 break;
             case MediaStatus.PLAYER_STATE_IDLE:
                 mLoading.setVisibility(View.INVISIBLE);
                 mPlayPause.setImageDrawable(mPlayDrawable);
                 mPlayPause.setVisibility(View.VISIBLE);
-                mLine2.setText(getString(R.string.casting_to_device,
+                mLine2.setText(getString(R.string.ccl_casting_to_device,
                         mCastManager.getDeviceName()));
                 break;
             case MediaStatus.PLAYER_STATE_BUFFERING:
                 mPlayPause.setVisibility(View.INVISIBLE);
                 mLoading.setVisibility(View.VISIBLE);
-                mLine2.setText(getString(R.string.loading));
+                mLine2.setText(getString(R.string.ccl_loading));
                 break;
             default:
                 break;
