@@ -46,7 +46,7 @@ import com.google.android.libraries.cast.companionlibrary.cast.exceptions.Transi
 import com.google.android.libraries.cast.companionlibrary.cast.tracks.ui.TracksChooserDialog;
 import com.google.android.libraries.cast.companionlibrary.utils.LogUtils;
 import com.google.android.libraries.cast.companionlibrary.utils.Utils;
-
+import com.google.android.libraries.cast.companionlibrary.R;
 
 import static com.google.android.libraries.cast.companionlibrary.utils.LogUtils.LOGD;
 import static com.google.android.libraries.cast.companionlibrary.utils.LogUtils.LOGE;
