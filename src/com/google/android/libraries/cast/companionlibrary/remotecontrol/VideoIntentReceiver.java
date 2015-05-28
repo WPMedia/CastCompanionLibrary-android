@@ -41,9 +41,16 @@ public class VideoIntentReceiver extends BroadcastReceiver {
 
     @Override
     public void onReceive(Context context, Intent intent) {
-        VideoCastManager castMgr = VideoCastManager.getInstance();
+        VideoCastManager castMgr = null;
+
+        try {
+            castMgr = VideoCastManager.getInstance();
+        } catch (IllegalStateException e) {
+            LOGD(TAG, "No CastManager Initialized", e);
+        }
+
         String action = intent.getAction();
-        if (action == null) {
+        if (castMgr == null || action == null) {
             return;
         }
         switch (action) {
