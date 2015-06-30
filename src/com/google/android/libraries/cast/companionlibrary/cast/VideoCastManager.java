@@ -537,6 +537,12 @@ public class VideoCastManager extends BaseCastManager
                 || mState == MediaStatus.PLAYER_STATE_PLAYING;
     }
 
+    public boolean isRemoteMediaIdleAndFinished() throws TransientNetworkDisconnectionException,
+            NoConnectionException {
+        checkConnectivity();
+        return mState == MediaStatus.IDLE_REASON_FINISHED;
+    }
+
     /**
      * Returns <code>true</code> if the remote connected device is playing a movie.
      *
