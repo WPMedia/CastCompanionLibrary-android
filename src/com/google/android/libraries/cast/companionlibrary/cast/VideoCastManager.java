@@ -1687,7 +1687,7 @@ public class VideoCastManager extends BaseCastManager
         if (listener != null) {
             addBaseCastConsumer(listener);
             mVideoConsumers.add(listener);
-            LOGD(TAG, "Successfully added the new CastConsumer listener " + listener);
+//            LOGD(TAG, "Successfully added the new CastConsumer listener " + listener);
         }
     }
 
