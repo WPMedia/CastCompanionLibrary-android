@@ -16,8 +16,28 @@
 
 package com.google.android.libraries.cast.companionlibrary.cast;
 
-import static com.google.android.libraries.cast.companionlibrary.utils.LogUtils.LOGD;
-import static com.google.android.libraries.cast.companionlibrary.utils.LogUtils.LOGE;
+import android.annotation.SuppressLint;
+import android.annotation.TargetApi;
+import android.content.ComponentName;
+import android.content.Context;
+import android.content.Intent;
+import android.content.res.Resources.NotFoundException;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.media.AudioManager;
+import android.net.Uri;
+import android.os.Build;
+import android.os.Bundle;
+import android.preference.PreferenceScreen;
+import android.support.v4.media.MediaMetadataCompat;
+import android.support.v4.media.session.MediaSessionCompat;
+import android.support.v4.media.session.PlaybackStateCompat;
+import android.support.v7.app.MediaRouteDialogFactory;
+import android.support.v7.media.MediaRouter.RouteInfo;
+import android.text.TextUtils;
+import android.view.KeyEvent;
+import android.view.View;
+import android.view.accessibility.CaptioningManager;
 
 import com.google.android.gms.cast.ApplicationMetadata;
 import com.google.android.gms.cast.Cast;
@@ -27,6 +47,7 @@ import com.google.android.gms.cast.CastDevice;
 import com.google.android.gms.cast.CastStatusCodes;
 import com.google.android.gms.cast.MediaInfo;
 import com.google.android.gms.cast.MediaMetadata;
+import com.google.android.gms.cast.MediaQueueItem;
 import com.google.android.gms.cast.MediaStatus;
 import com.google.android.gms.cast.MediaTrack;
 import com.google.android.gms.cast.RemoteMediaPlayer;
@@ -37,8 +58,6 @@ import com.google.android.gms.common.GooglePlayServicesUtil;
 import com.google.android.gms.common.api.ResultCallback;
 import com.google.android.gms.common.api.Status;
 import com.google.android.gms.common.images.WebImage;
-
-
 import com.google.android.libraries.cast.companionlibrary.R;
 import com.google.android.libraries.cast.companionlibrary.cast.callbacks.VideoCastConsumer;
 import com.google.android.libraries.cast.companionlibrary.cast.callbacks.VideoCastConsumerImpl;
@@ -48,12 +67,11 @@ import com.google.android.libraries.cast.companionlibrary.cast.exceptions.NoConn
 import com.google.android.libraries.cast.companionlibrary.cast.exceptions.OnFailedListener;
 import com.google.android.libraries.cast.companionlibrary.cast.exceptions.TransientNetworkDisconnectionException;
 import com.google.android.libraries.cast.companionlibrary.cast.player.MediaAuthService;
+import com.google.android.libraries.cast.companionlibrary.cast.player.VideoCastController;
 import com.google.android.libraries.cast.companionlibrary.cast.player.VideoCastControllerActivity;
 import com.google.android.libraries.cast.companionlibrary.cast.tracks.OnTracksSelectedListener;
 import com.google.android.libraries.cast.companionlibrary.cast.tracks.TracksPreferenceManager;
 import com.google.android.libraries.cast.companionlibrary.notification.VideoCastNotificationService;
-import com.google.android.libraries.cast.companionlibrary.remotecontrol.RemoteControlClientCompat;
-import com.google.android.libraries.cast.companionlibrary.remotecontrol.RemoteControlHelper;
 import com.google.android.libraries.cast.companionlibrary.remotecontrol.VideoIntentReceiver;
 import com.google.android.libraries.cast.companionlibrary.utils.FetchBitmapTask;
 import com.google.android.libraries.cast.companionlibrary.utils.LogUtils;
@@ -61,30 +79,6 @@ import com.google.android.libraries.cast.companionlibrary.utils.Utils;
 import com.google.android.libraries.cast.companionlibrary.widgets.IMiniController;
 import com.google.android.libraries.cast.companionlibrary.widgets.MiniController;
 import com.google.android.libraries.cast.companionlibrary.widgets.MiniController.OnMiniControllerChangedListener;
-
-import android.annotation.SuppressLint;
-import android.annotation.TargetApi;
-import android.app.PendingIntent;
-import android.content.ComponentName;
-import android.content.Context;
-import android.content.Intent;
-import android.content.res.Resources.NotFoundException;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
-import android.media.AudioManager;
-import android.media.MediaMetadataRetriever;
-import android.media.RemoteControlClient;
-import android.net.Uri;
-import android.os.Build;
-import android.os.Bundle;
-import android.preference.PreferenceScreen;
-import android.support.v7.app.MediaRouteDialogFactory;
-import android.support.v7.media.MediaRouter.RouteInfo;
-import android.text.TextUtils;
-import android.util.Log;
-import android.view.KeyEvent;
-import android.view.View;
-import android.view.accessibility.CaptioningManager;
 
 import org.json.JSONObject;
 
@@ -94,8 +88,14 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.Timer;
+import java.util.TimerTask;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.TimeUnit;
+
+import static com.google.android.libraries.cast.companionlibrary.utils.LogUtils.LOGD;
+import static com.google.android.libraries.cast.companionlibrary.utils.LogUtils.LOGE;
 
 /**
  * An abstract subclass of {@link BaseCastManager} that is suitable for casting video contents (it
@@ -136,16 +136,26 @@ import java.util.concurrent.TimeUnit;
 public class VideoCastManager extends BaseCastManager
         implements OnMiniControllerChangedListener, OnFailedListener {
 
+    private static final String TAG = LogUtils.makeLogTag(VideoCastManager.class);
+
     public static final String EXTRA_HAS_AUTH = "hasAuth";
     public static final String EXTRA_MEDIA = "media";
     public static final String EXTRA_START_POINT = "startPoint";
     public static final String EXTRA_SHOULD_START = "shouldStart";
     public static final String EXTRA_CUSTOM_DATA = "customData";
     public static final double DEFAULT_VOLUME_STEP = 0.05;
+    private static final long PROGRESS_UPDATE_INTERVAL_MS = TimeUnit.SECONDS.toMillis(1);
     private double mVolumeStep = DEFAULT_VOLUME_STEP;
     public static final long DEFAULT_LIVE_STREAM_DURATION_MS = TimeUnit.HOURS.toMillis(2); // 2hrs
     public static final String PREFS_KEY_START_ACTIVITY = "ccl-start-cast-activity";
+    public static final String PREFS_KEY_NEXT_PREV_POLICY = "ccl-next-prev-policy";
+    public static final String PREFS_KEY_IMMERSIVE_MODE = "ccl-cast-contoller-immersive";
     private TracksPreferenceManager mTrackManager;
+    private ComponentName mMediaEventReceiver;
+    private MediaQueue mMediaQueue;
+    private MediaStatus mMediaStatus;
+    private Timer mProgressTimer;
+    private UpdateProgressTask mProgressTask;
 
     /**
      * Volume can be controlled at two different layers, one is at the "stream" level and one at
@@ -158,15 +168,13 @@ public class VideoCastManager extends BaseCastManager
         DEVICE
     }
 
-    private static final String TAG = LogUtils.makeLogTag(VideoCastManager.class);
     private static VideoCastManager sInstance;
     private Class<?> mTargetActivity;
     private final Set<IMiniController> mMiniControllers = Collections
             .synchronizedSet(new HashSet<IMiniController>());
     private AudioManager mAudioManager;
-    private ComponentName mMediaButtonReceiverComponent;
     private RemoteMediaPlayer mRemoteMediaPlayer;
-    private RemoteControlClientCompat mRemoteControlClientCompat;
+    private MediaSessionCompat mMediaSessionCompat;
     private VolumeType mVolumeType = VolumeType.DEVICE;
     private int mState = MediaStatus.PLAYER_STATE_IDLE;
     private int mIdleReason;
@@ -177,6 +185,20 @@ public class VideoCastManager extends BaseCastManager
             new CopyOnWriteArraySet<>();
     private MediaAuthService mAuthService;
     private long mLiveStreamDuration = DEFAULT_LIVE_STREAM_DURATION_MS;
+    private MediaQueueItem mPreLoadingItem;
+
+    public static final int QUEUE_OPERATION_LOAD = 1;
+    public static final int QUEUE_OPERATION_INSERT_ITEMS = 2;
+    public static final int QUEUE_OPERATION_UPDATE_ITEMS = 3;
+    public static final int QUEUE_OPERATION_JUMP = 4;
+    public static final int QUEUE_OPERATION_REMOVE_ITEM = 5;
+    public static final int QUEUE_OPERATION_REMOVE_ITEMS = 6;
+    public static final int QUEUE_OPERATION_REORDER = 7;
+    public static final int QUEUE_OPERATION_MOVE = 8;
+    public static final int QUEUE_OPERATION_APPEND = 9;
+    public static final int QUEUE_OPERATION_NEXT = 10;
+    public static final int QUEUE_OPERATION_PREV = 11;
+    public static final int QUEUE_OPERATION_SET_REPEAT = 12;
 
     /**
      * Returns the namespace for an additional data namespace that this library can manage for an
@@ -211,7 +233,6 @@ public class VideoCastManager extends BaseCastManager
         }
 
         mAudioManager = (AudioManager) mContext.getSystemService(Context.AUDIO_SERVICE);
-        mMediaButtonReceiverComponent = new ComponentName(mContext, VideoIntentReceiver.class);
     }
 
     public static synchronized VideoCastManager initialize(Context context,
@@ -224,6 +245,7 @@ public class VideoCastManager extends BaseCastManager
                 LOGE(TAG, msg);
             }
             sInstance = new VideoCastManager(context, applicationId, targetActivity, dataNamespace);
+            sInstance.restartProgressTimer();
         }
         return sInstance;
     }
@@ -270,9 +292,7 @@ public class VideoCastManager extends BaseCastManager
             controller.setSubtitle(mContext.getResources().getString(R.string.ccl_casting_to_device,
                     mDeviceName));
             controller.setTitle(mm.getString(MediaMetadata.KEY_TITLE));
-            if (!mm.getImages().isEmpty()) {
-                controller.setIcon(mm.getImages().get(0).getUrl());
-            }
+            controller.setIcon(Utils.getImageUri(mediaInfo, 0));
         }
     }
 
@@ -327,6 +347,20 @@ public class VideoCastManager extends BaseCastManager
         context.startActivity(intent);
     }
 
+    @Override
+    public void onUpcomingPlayClicked(View view, MediaQueueItem upcomingItem) {
+        for (VideoCastConsumer consumer : mVideoConsumers) {
+            consumer.onUpcomingPlayClicked(view, upcomingItem);
+        }
+    }
+
+    @Override
+    public void onUpcomingStopClicked(View view, MediaQueueItem upcomingItem) {
+        for (VideoCastConsumer consumer : mVideoConsumers) {
+            consumer.onUpcomingStopClicked(view, upcomingItem);
+        }
+    }
+
     /**
      * Updates the visibility of the mini controllers. In most cases, clients do not need to use
      * this as the {@link VideoCastManager} handles the visibility.
@@ -338,6 +372,15 @@ public class VideoCastManager extends BaseCastManager
         synchronized (mMiniControllers) {
             for (IMiniController controller : mMiniControllers) {
                 controller.setVisibility(visible ? View.VISIBLE : View.GONE);
+            }
+        }
+    }
+
+    public void updateMiniControllersVisibilityForUpcoming(MediaQueueItem item) {
+        synchronized (mMiniControllers) {
+            for (IMiniController controller : mMiniControllers) {
+                controller.setUpcomingItem(item);
+                controller.setUpcomingVisibility(item != null);
             }
         }
     }
@@ -776,9 +819,9 @@ public class VideoCastManager extends BaseCastManager
 
     private void onApplicationDisconnected(int errorCode) {
         LOGD(TAG, "onApplicationDisconnected() reached with error code: " + errorCode);
-        updateRemoteControl(false);
-        if (mRemoteControlClientCompat != null && isFeatureEnabled(FEATURE_LOCKSCREEN)) {
-            mRemoteControlClientCompat.removeFromMediaRouter(mMediaRouter);
+        updateMediaSession(false);
+        if (mMediaSessionCompat != null && isFeatureEnabled(FEATURE_LOCKSCREEN)) {
+            mMediaRouter.setMediaSessionCompat(null);
         }
         for (VideoCastConsumer consumer : mVideoConsumers) {
             consumer.onApplicationDisconnected(errorCode);
@@ -991,6 +1034,518 @@ public class VideoCastManager extends BaseCastManager
                     public void onResult(MediaChannelResult result) {
                         for (VideoCastConsumer consumer : mVideoConsumers) {
                             consumer.onMediaLoadResult(result.getStatus().getStatusCode());
+                        }
+                    }
+                });
+    }
+    /**
+     * Loads and optionally starts playback of a new queue of media items.
+     *
+     * @param items Array of items to load, in the order that they should be played. Must not be
+     *              {@code null} or empty.
+     * @param startIndex The array index of the item in the {@code items} array that should be
+     *                   played first (i.e., it will become the currentItem).If {@code repeatMode}
+     *                   is {@link MediaStatus#REPEAT_MODE_REPEAT_OFF} playback will end when the
+     *                   last item in the array is played.
+     *                   <p>
+     *                   This may be useful for continuation scenarios where the user was already
+     *                   using the sender application and in the middle decides to cast. This lets
+     *                   the sender application avoid mapping between the local and remote queue
+     *                   positions and/or avoid issuing an extra request to update the queue.
+     *                   <p>
+     *                   This value must be less than the length of {@code items}.
+     * @param repeatMode The repeat playback mode for the queue. One of
+     *                   {@link MediaStatus#REPEAT_MODE_REPEAT_OFF},
+     *                   {@link MediaStatus#REPEAT_MODE_REPEAT_ALL},
+     *                   {@link MediaStatus#REPEAT_MODE_REPEAT_SINGLE} and
+     *                   {@link MediaStatus#REPEAT_MODE_REPEAT_ALL_AND_SHUFFLE}.
+     * @param customData Custom application-specific data to pass along with the request, may be
+     *                   {@code null}.
+     * @throws TransientNetworkDisconnectionException
+     * @throws NoConnectionException
+     */
+    public void queueLoad(final MediaQueueItem[] items, final int startIndex, final int repeatMode,
+            final JSONObject customData)
+            throws TransientNetworkDisconnectionException, NoConnectionException {
+        LOGD(TAG, "queueLoad");
+        checkConnectivity();
+        if (items == null || items.length == 0) {
+            return;
+        }
+        if (mRemoteMediaPlayer == null) {
+            LOGE(TAG, "Trying to queue one or more videos with no active media session");
+            throw new NoConnectionException();
+        }
+        mRemoteMediaPlayer
+                .queueLoad(mApiClient, items, startIndex, repeatMode, customData)
+                .setResultCallback(new ResultCallback<MediaChannelResult>() {
+
+                    @Override
+                    public void onResult(MediaChannelResult result) {
+                        for (VideoCastConsumer consumer : mVideoConsumers) {
+                            consumer.onMediaQueueOperationResult(QUEUE_OPERATION_LOAD,
+                                    result.getStatus().getStatusCode());
+                        }
+                    }
+                });
+    }
+
+    /**
+     * Inserts a list of new media items into the queue.
+     *
+     * @param itemsToInsert List of items to insert into the queue, in the order that they should be
+     *                      played. The itemId field of the items should be unassigned or the
+     *                      request will fail with an INVALID_PARAMS error. Must not be {@code null}
+     *                      or empty.
+     * @param insertBeforeItemId ID of the item that will be located immediately after the inserted
+     *                           list. If the value is {@link MediaQueueItem#INVALID_ITEM_ID} or
+     *                           invalid, the inserted list will be appended to the end of the
+     *                           queue.
+     * @param customData Custom application-specific data to pass along with the request. May be
+     *                   {@code null}.
+     * @throws TransientNetworkDisconnectionException
+     * @throws NoConnectionException
+     * @throws IllegalArgumentException
+     */
+    public void queueInsertItems(final MediaQueueItem[] itemsToInsert, final int insertBeforeItemId,
+            final JSONObject customData)
+            throws TransientNetworkDisconnectionException, NoConnectionException {
+        LOGD(TAG, "queueInsertItems");
+        checkConnectivity();
+        if (itemsToInsert == null || itemsToInsert.length == 0) {
+            throw new IllegalArgumentException("items cannot be empty or null");
+        }
+        if (mRemoteMediaPlayer == null) {
+            LOGE(TAG, "Trying to insert into queue with no active media session");
+            throw new NoConnectionException();
+        }
+        mRemoteMediaPlayer
+                .queueInsertItems(mApiClient, itemsToInsert, insertBeforeItemId, customData)
+                .setResultCallback(
+                        new ResultCallback<MediaChannelResult>() {
+
+                            @Override
+                            public void onResult(MediaChannelResult result) {
+                                for (VideoCastConsumer consumer : mVideoConsumers) {
+                                    consumer.onMediaQueueOperationResult(
+                                            QUEUE_OPERATION_INSERT_ITEMS,
+                                            result.getStatus().getStatusCode());
+                                }
+                            }
+                        });
+    }
+
+    /**
+     * Updates properties of a subset of the existing items in the media queue.
+     *
+     * @param itemsToUpdate List of queue items to be updated. The items will retain the existing
+     *                      order and will be fully replaced with the ones provided, including the
+     *                      media information. Any other items currently in the queue will remain
+     *                      unchanged. The tracks information can not change once the item is loaded
+     *                      (if the item is the currentItem). If any of the items does not exist it
+     *                      will be ignored.
+     * @param customData Custom application-specific data to pass along with the request. May be
+     *                   {@code null}.
+     * @throws TransientNetworkDisconnectionException
+     * @throws NoConnectionException
+     */
+    public void queueUpdateItems(final MediaQueueItem[] itemsToUpdate, final JSONObject customData)
+            throws TransientNetworkDisconnectionException, NoConnectionException {
+        checkConnectivity();
+        if (mRemoteMediaPlayer == null) {
+            LOGE(TAG, "Trying to update the queue with no active media session");
+            throw new NoConnectionException();
+        }
+        mRemoteMediaPlayer
+                .queueUpdateItems(mApiClient, itemsToUpdate, customData).setResultCallback(
+                new ResultCallback<MediaChannelResult>() {
+
+                    @Override
+                    public void onResult(MediaChannelResult result) {
+                        LOGD(TAG, "queueUpdateItems() " + result.getStatus() + result.getStatus()
+                                .isSuccess());
+                        for (VideoCastConsumer consumer : mVideoConsumers) {
+                            consumer.onMediaQueueOperationResult(QUEUE_OPERATION_UPDATE_ITEMS,
+                                    result.getStatus().getStatusCode());
+                        }
+                    }
+                });
+    }
+
+    /**
+     * Plays the item with {@code itemId} in the queue.
+     *
+     * If {@code itemId} is not found in the queue, this method will report success without sending
+     * a request to the receiver.
+     *
+     * @param itemId The ID of the item to which to jump.
+     * @param customData Custom application-specific data to pass along with the request. May be
+     *                   {@code null}.
+     * @throws TransientNetworkDisconnectionException
+     * @throws NoConnectionException
+     * @throws IllegalArgumentException
+     */
+    public void queueJumpToItem(int itemId, final JSONObject customData)
+            throws TransientNetworkDisconnectionException, NoConnectionException,
+            IllegalArgumentException {
+        checkConnectivity();
+        if (itemId == MediaQueueItem.INVALID_ITEM_ID) {
+            throw new IllegalArgumentException("itemId is not valid");
+        }
+        if (mRemoteMediaPlayer == null) {
+            LOGE(TAG, "Trying to jump in a queue with no active media session");
+            throw new NoConnectionException();
+        }
+        mRemoteMediaPlayer
+                .queueJumpToItem(mApiClient, itemId, customData).setResultCallback(
+                new ResultCallback<MediaChannelResult>() {
+
+                    @Override
+                    public void onResult(MediaChannelResult result) {
+                        for (VideoCastConsumer consumer : mVideoConsumers) {
+                            consumer.onMediaQueueOperationResult(QUEUE_OPERATION_JUMP,
+                                    result.getStatus().getStatusCode());
+                        }
+                    }
+                });
+    }
+
+    /**
+     * Removes a list of items from the queue. If the remaining queue is empty, the media session
+     * will be terminated.
+     *
+     * @param itemIdsToRemove The list of media item IDs to remove. Must not be {@code null} or
+     *                        empty.
+     * @param customData Custom application-specific data to pass along with the request. May be
+     *                   {@code null}.
+     * @throws TransientNetworkDisconnectionException
+     * @throws NoConnectionException
+     * @throws IllegalArgumentException
+     */
+    public void queueRemoveItems(final int[] itemIdsToRemove, final JSONObject customData)
+            throws TransientNetworkDisconnectionException, NoConnectionException,
+            IllegalArgumentException {
+        LOGD(TAG, "queueRemoveItems");
+        checkConnectivity();
+        if (itemIdsToRemove == null || itemIdsToRemove.length == 0) {
+            throw new IllegalArgumentException("itemIds cannot be empty or null");
+        }
+        if (mRemoteMediaPlayer == null) {
+            LOGE(TAG, "Trying to remove items from queue with no active media session");
+            throw new NoConnectionException();
+        }
+        mRemoteMediaPlayer
+                .queueRemoveItems(mApiClient, itemIdsToRemove, customData).setResultCallback(
+                new ResultCallback<MediaChannelResult>() {
+
+                    @Override
+                    public void onResult(MediaChannelResult result) {
+                        for (VideoCastConsumer consumer : mVideoConsumers) {
+                            consumer.onMediaQueueOperationResult(QUEUE_OPERATION_REMOVE_ITEMS,
+                                    result.getStatus().getStatusCode());
+                        }
+                    }
+                });
+    }
+
+    /**
+     * Removes the item with {@code itemId} from the queue.
+     *
+     * If {@code itemId} is not found in the queue, this method will silently return without sending
+     * a request to the receiver. A {@code itemId} may not be in the queue because it wasn't
+     * originally in the queue, or it was removed by another sender.
+     *
+     * @param itemId The ID of the item to be removed.
+     * @param customData Custom application-specific data to pass along with the request. May be
+     *                   {@code null}.
+     * @throws TransientNetworkDisconnectionException
+     * @throws NoConnectionException
+     * @throws IllegalArgumentException
+     */
+    public void queueRemoveItem(final int itemId, final JSONObject customData)
+            throws TransientNetworkDisconnectionException, NoConnectionException,
+            IllegalArgumentException {
+        LOGD(TAG, "queueRemoveItem");
+        checkConnectivity();
+        if (itemId == MediaQueueItem.INVALID_ITEM_ID) {
+            throw new IllegalArgumentException("itemId is invalid");
+        }
+        if (mRemoteMediaPlayer == null) {
+            LOGE(TAG, "Trying to remove an item from queue with no active media session");
+            throw new NoConnectionException();
+        }
+        mRemoteMediaPlayer
+                .queueRemoveItem(mApiClient, itemId, customData).setResultCallback(
+                new ResultCallback<MediaChannelResult>() {
+
+                    @Override
+                    public void onResult(MediaChannelResult result) {
+                        for (VideoCastConsumer consumer : mVideoConsumers) {
+                            consumer.onMediaQueueOperationResult(QUEUE_OPERATION_REMOVE_ITEM,
+                                    result.getStatus().getStatusCode());
+                        }
+                    }
+                });
+    }
+
+    /**
+     * Reorder a list of media items in the queue.
+     *
+     * @param itemIdsToReorder The list of media item IDs to reorder, in the new order. Any other
+     *                         items currently in the queue will maintain their existing order. The
+     *                         list will be inserted just before the item specified by
+     *                         {@code insertBeforeItemId}, or at the end of the queue if
+     *                         {@code insertBeforeItemId} is {@link MediaQueueItem#INVALID_ITEM_ID}.
+     *                         <p>
+     *                         For example:
+     *                         <p>
+     *                         If insertBeforeItemId is not specified <br>
+     *                         Existing queue: "A","D","G","H","B","E" <br>
+     *                         itemIds: "D","H","B" <br>
+     *                         New Order: "A","G","E","D","H","B" <br>
+     *                         <p>
+     *                         If insertBeforeItemId is "A" <br>
+     *                         Existing queue: "A","D","G","H","B" <br>
+     *                         itemIds: "D","H","B" <br>
+     *                         New Order: "D","H","B","A","G","E" <br>
+     *                         <p>
+     *                         If insertBeforeItemId is "G" <br>
+     *                         Existing queue: "A","D","G","H","B" <br>
+     *                         itemIds: "D","H","B" <br>
+     *                         New Order: "A","D","H","B","G","E" <br>
+     *                         <p>
+     *                         If any of the items does not exist it will be ignored.
+     *                         Must not be {@code null} or empty.
+     * @param insertBeforeItemId ID of the item that will be located immediately after the reordered
+     *                           list. If set to {@link MediaQueueItem#INVALID_ITEM_ID}, the
+     *                           reordered list will be appended at the end of the queue.
+     * @param customData Custom application-specific data to pass along with the request. May be
+     *                   {@code null}.
+     * @throws TransientNetworkDisconnectionException
+     * @throws NoConnectionException
+     */
+    public void queueReorderItems(final int[] itemIdsToReorder, final int insertBeforeItemId,
+            final JSONObject customData)
+            throws TransientNetworkDisconnectionException, NoConnectionException,
+            IllegalArgumentException {
+        LOGD(TAG, "queueReorderItems");
+        checkConnectivity();
+        if (itemIdsToReorder == null || itemIdsToReorder.length == 0) {
+            throw new IllegalArgumentException("itemIdsToReorder cannot be empty or null");
+        }
+        if (mRemoteMediaPlayer == null) {
+            LOGE(TAG, "Trying to reorder items in a queue with no active media session");
+            throw new NoConnectionException();
+        }
+        mRemoteMediaPlayer
+                .queueReorderItems(mApiClient, itemIdsToReorder, insertBeforeItemId, customData)
+                .setResultCallback(
+                        new ResultCallback<MediaChannelResult>() {
+
+                            @Override
+                            public void onResult(MediaChannelResult result) {
+                                for (VideoCastConsumer consumer : mVideoConsumers) {
+                                    consumer.onMediaQueueOperationResult(QUEUE_OPERATION_REORDER,
+                                            result.getStatus().getStatusCode());
+                                }
+                            }
+                        });
+    }
+
+    /**
+     * Moves the item with {@code itemId} to a new position in the queue.
+     *
+     * If {@code itemId} is not found in the queue, either because it wasn't there originally or it
+     * was removed by another sender before calling this function, this function will silently
+     * return without sending a request to the receiver.
+     *
+     * @param itemId The ID of the item to be moved.
+     * @param newIndex The new index of the item. If the value is negative, an error will be
+     *                 returned. If the value is out of bounds, or becomes out of bounds because the
+     *                 queue was shortened by another sender while this request is in progress, the
+     *                 item will be moved to the end of the queue.
+     * @param customData Custom application-specific data to pass along with the request. May be
+     *                   {@code null}.
+     * @throws TransientNetworkDisconnectionException
+     * @throws NoConnectionException
+     */
+    public void queueMoveItemToNewIndex(int itemId, int newIndex, final JSONObject customData)
+            throws TransientNetworkDisconnectionException, NoConnectionException {
+        mRemoteMediaPlayer
+                .queueMoveItemToNewIndex(mApiClient, itemId, newIndex, customData)
+                .setResultCallback(
+                        new ResultCallback<MediaChannelResult>() {
+
+                            @Override
+                            public void onResult(MediaChannelResult result) {
+                                for (VideoCastConsumer consumer : mVideoConsumers) {
+                                    consumer.onMediaQueueOperationResult(QUEUE_OPERATION_MOVE,
+                                            result.getStatus().getStatusCode());;
+                                }
+                            }
+                        });
+    }
+
+    /**
+     * Appends a new media item to the end of the queue.
+     *
+     * @param item The item to append. Must not be {@code null}.
+     * @param customData Custom application-specific data to pass along with the request. May be
+     *                   {@code null}.
+     * @throws TransientNetworkDisconnectionException
+     * @throws NoConnectionException
+     */
+    public void queueAppendItem(MediaQueueItem item, final JSONObject customData)
+            throws TransientNetworkDisconnectionException, NoConnectionException {
+        mRemoteMediaPlayer
+                .queueAppendItem(mApiClient, item, customData)
+                .setResultCallback(
+                        new ResultCallback<MediaChannelResult>() {
+
+                            @Override
+                            public void onResult(MediaChannelResult result) {
+                                for (VideoCastConsumer consumer : mVideoConsumers) {
+                                    consumer.onMediaQueueOperationResult(QUEUE_OPERATION_APPEND,
+                                            result.getStatus().getStatusCode());
+                                }
+                            }
+                        });
+    }
+
+    /**
+     * Jumps to the next item in the queue.
+     *
+     * @param customData Custom application-specific data to pass along with the request. May be
+     *                   {@code null}.
+     * @throws TransientNetworkDisconnectionException
+     * @throws NoConnectionException
+     */
+    public void queueNext(final JSONObject customData)
+            throws TransientNetworkDisconnectionException, NoConnectionException {
+        checkConnectivity();
+        if (mRemoteMediaPlayer == null) {
+            LOGE(TAG, "Trying to update the queue with no active media session");
+            throw new NoConnectionException();
+        }
+        mRemoteMediaPlayer
+                .queueNext(mApiClient, customData).setResultCallback(
+                new ResultCallback<MediaChannelResult>() {
+
+                    @Override
+                    public void onResult(MediaChannelResult result) {
+                        for (VideoCastConsumer consumer : mVideoConsumers) {
+                            consumer.onMediaQueueOperationResult(QUEUE_OPERATION_NEXT,
+                                    result.getStatus().getStatusCode());
+                        }
+                    }
+                });
+    }
+
+    /**
+     * Jumps to the previous item in the queue.
+     *
+     * @param customData Custom application-specific data to pass along with the request. May be
+     *                   {@code null}.
+     * @throws TransientNetworkDisconnectionException
+     * @throws NoConnectionException
+     */
+    public void queuePrev(final JSONObject customData)
+            throws TransientNetworkDisconnectionException, NoConnectionException {
+        checkConnectivity();
+        if (mRemoteMediaPlayer == null) {
+            LOGE(TAG, "Trying to update the queue with no active media session");
+            throw new NoConnectionException();
+        }
+        mRemoteMediaPlayer
+                .queuePrev(mApiClient, customData).setResultCallback(
+                new ResultCallback<MediaChannelResult>() {
+
+                    @Override
+                    public void onResult(MediaChannelResult result) {
+                        for (VideoCastConsumer consumer : mVideoConsumers) {
+                            consumer.onMediaQueueOperationResult(QUEUE_OPERATION_PREV,
+                                    result.getStatus().getStatusCode());
+                        }
+                    }
+                });
+    }
+
+    /**
+     * Inserts an item in the queue and starts the playback of that newly inserted item. It is
+     * assumed that we are inserting  before the "current item"
+     *
+     * @param item The item to be inserted
+     * @param insertBeforeItemId ID of the item that will be located immediately after the inserted
+     * and is assumed to be the "current item"
+     * @param customData Custom application-specific data to pass along with the request. May be
+     *                   {@code null}.
+     * @throws TransientNetworkDisconnectionException
+     * @throws NoConnectionException
+     * @throws IllegalArgumentException
+     */
+    public void queueInsertBeforeCurrentAndPlay(MediaQueueItem item, int insertBeforeItemId,
+            final JSONObject customData)
+            throws TransientNetworkDisconnectionException, NoConnectionException {
+        checkConnectivity();
+        if (mRemoteMediaPlayer == null) {
+            LOGE(TAG, "Trying to insert into queue with no active media session");
+            throw new NoConnectionException();
+        }
+        if (item == null || insertBeforeItemId == MediaQueueItem.INVALID_ITEM_ID) {
+            throw new IllegalArgumentException(
+                    "item cannot be empty or insertBeforeItemId cannot be invalid");
+        }
+        mRemoteMediaPlayer.queueInsertItems(mApiClient, new MediaQueueItem[]{item},
+                insertBeforeItemId, customData).setResultCallback(
+                new ResultCallback<MediaChannelResult>() {
+
+                    @Override
+                    public void onResult(MediaChannelResult result) {
+                        if (result.getStatus().isSuccess()) {
+
+                            try {
+                                queuePrev(customData);
+                            } catch (TransientNetworkDisconnectionException |
+                                    NoConnectionException e) {
+                                LOGE(TAG, "queuePrev() Failed to skip to previous", e);
+                            }
+                        }
+                        for (VideoCastConsumer consumer : mVideoConsumers) {
+                            consumer.onMediaQueueOperationResult(QUEUE_OPERATION_INSERT_ITEMS,
+                                    result.getStatus().getStatusCode());
+                        }
+                    }
+                });
+    }
+
+    /**
+     * Sets the repeat mode of the queue.
+     *
+     * @param repeatMode The repeat playback mode for the queue.
+     * @param customData Custom application-specific data to pass along with the request. May be
+     *                   {@code null}.
+     * @throws TransientNetworkDisconnectionException
+     * @throws NoConnectionException
+     */
+    public void queueSetRepeatMode(final int repeatMode, final JSONObject customData)
+            throws TransientNetworkDisconnectionException, NoConnectionException {
+        checkConnectivity();
+        if (mRemoteMediaPlayer == null) {
+            LOGE(TAG, "Trying to update the queue with no active media session");
+            throw new NoConnectionException();
+        }
+        mRemoteMediaPlayer
+                .queueSetRepeatMode(mApiClient, repeatMode, customData).setResultCallback(
+                new ResultCallback<MediaChannelResult>() {
+
+                    @Override
+                    public void onResult(MediaChannelResult result) {
+                        if (!result.getStatus().isSuccess()) {
+                            LOGD(TAG, "Failed with status: " + result.getStatus());
+                        }
+                        for (VideoCastConsumer consumer : mVideoConsumers) {
+                            consumer.onMediaQueueOperationResult(QUEUE_OPERATION_SET_REPEAT,
+                                    result.getStatus().getStatusCode());
                         }
                     }
                 });
@@ -1241,6 +1796,19 @@ public class VideoCastManager extends BaseCastManager
                     }
             );
 
+            mRemoteMediaPlayer.setOnPreloadStatusUpdatedListener(
+                    new RemoteMediaPlayer.OnPreloadStatusUpdatedListener() {
+
+                        @Override
+                        public void onPreloadStatusUpdated() {
+                            LOGD(TAG,
+                                    "RemoteMediaPlayer::onPreloadStatusUpdated() is "
+                                            + "reached");
+                            VideoCastManager.this.onRemoteMediaPreloadStatusUpdated();
+                        }
+                    });
+
+
             mRemoteMediaPlayer.setOnMetadataUpdatedListener(
                     new RemoteMediaPlayer.OnMetadataUpdatedListener() {
                         @Override
@@ -1250,6 +1818,33 @@ public class VideoCastManager extends BaseCastManager
                         }
                     }
             );
+
+            mRemoteMediaPlayer.setOnQueueStatusUpdatedListener(
+                    new RemoteMediaPlayer.OnQueueStatusUpdatedListener() {
+
+                        @Override
+                        public void onQueueStatusUpdated() {
+                            LOGD(TAG,
+                                    "RemoteMediaPlayer::onQueueStatusUpdated() is "
+                                            + "reached");
+                            mMediaStatus = mRemoteMediaPlayer.getMediaStatus();
+                            if (mMediaStatus != null
+                                    && mMediaStatus.getQueueItems() != null) {
+                                List<MediaQueueItem> queueItems = mMediaStatus
+                                        .getQueueItems();
+                                int itemId = mMediaStatus.getCurrentItemId();
+                                MediaQueueItem item = mMediaStatus
+                                        .getQueueItemById(itemId);
+                                int repeatMode = mMediaStatus.getQueueRepeatMode();
+                                boolean shuffle = false;
+                                onQueueUpdated(queueItems, item, repeatMode, shuffle);
+                            } else {
+                                onQueueUpdated(null, null,
+                                        MediaStatus.REPEAT_MODE_REPEAT_OFF,
+                                        false);
+                            }
+                        }
+                    });
 
         }
         try {
@@ -1300,6 +1895,14 @@ public class VideoCastManager extends BaseCastManager
      */
     public int getPlaybackStatus() {
         return mState;
+    }
+
+    /**
+     * Returns the latest retrieved value for the {@link MediaStatus}. This value is updated
+     * whenever the onStatusUpdated callback is called.
+     */
+    public final MediaStatus getMediaStatus() {
+        return mMediaStatus;
     }
 
     /**
@@ -1422,8 +2025,25 @@ public class VideoCastManager extends BaseCastManager
             LOGD(TAG, "mApiClient or mRemoteMediaPlayer is null, so will not proceed");
             return;
         }
-        mState = mRemoteMediaPlayer.getMediaStatus().getPlayerState();
-        mIdleReason = mRemoteMediaPlayer.getMediaStatus().getIdleReason();
+        mMediaStatus = mRemoteMediaPlayer.getMediaStatus();
+        List<MediaQueueItem> queueItems = mMediaStatus.getQueueItems();
+        if (queueItems != null) {
+            int itemId = mMediaStatus.getCurrentItemId();
+            MediaQueueItem item = mMediaStatus.getQueueItemById(itemId);
+            int repeatMode = mMediaStatus.getQueueRepeatMode();
+            boolean shuffle = false; //mMediaStatus.isShuffleEnabled();
+            onQueueUpdated(queueItems, item, repeatMode, shuffle);
+        } else {
+            onQueueUpdated(null, null, MediaStatus.REPEAT_MODE_REPEAT_OFF, false);
+        }
+        int currentItemId = mMediaStatus.getCurrentItemId();
+        if (queueItems != null && !queueItems.isEmpty()) {
+            for (MediaQueueItem item : queueItems) {
+                LOGD(TAG, "[queue] Queue Item is: " + item.toJson());
+            }
+        }
+        mState = mMediaStatus.getPlayerState();
+        mIdleReason = mMediaStatus.getIdleReason();
 
         try {
             double volume = getVolume();
@@ -1431,32 +2051,39 @@ public class VideoCastManager extends BaseCastManager
             boolean makeUiHidden = false;
             if (mState == MediaStatus.PLAYER_STATE_PLAYING) {
                 LOGD(TAG, "onRemoteMediaPlayerStatusUpdated(): Player status = playing");
-                updateRemoteControl(true);
+                updateMediaSession(true);
                 long mediaDurationLeft = getMediaTimeRemaining();
                 startReconnectionService(mediaDurationLeft);
                 startNotificationService();
             } else if (mState == MediaStatus.PLAYER_STATE_PAUSED) {
                 LOGD(TAG, "onRemoteMediaPlayerStatusUpdated(): Player status = paused");
-                updateRemoteControl(false);
+                updateMediaSession(false);
                 startNotificationService();
             } else if (mState == MediaStatus.PLAYER_STATE_IDLE) {
                 LOGD(TAG, "onRemoteMediaPlayerStatusUpdated(): Player status = idle");
-                updateRemoteControl(false);
+                updateMediaSession(false);
                 switch (mIdleReason) {
                     case MediaStatus.IDLE_REASON_FINISHED:
-                        removeRemoteControlClient();
+                        clearMediaSession();
                         makeUiHidden = true;
                         break;
                     case MediaStatus.IDLE_REASON_ERROR:
                         // something bad happened on the cast device
                         LOGD(TAG, "onRemoteMediaPlayerStatusUpdated(): IDLE reason = ERROR");
                         makeUiHidden = true;
-                        removeRemoteControlClient();
+                        clearMediaSession();
                         onFailed(R.string.ccl_failed_receiver_player_error, NO_STATUS_CODE);
                         break;
                     case MediaStatus.IDLE_REASON_CANCELED:
                         LOGD(TAG, "onRemoteMediaPlayerStatusUpdated(): IDLE reason = CANCELLED");
                         makeUiHidden = !isRemoteStreamLive();
+                        break;
+                    case MediaStatus.IDLE_REASON_INTERRUPTED:
+                        if (mMediaStatus.getLoadingItemId() == MediaQueueItem.INVALID_ITEM_ID) {
+                            // we have reached the end of queue
+                            clearMediaSession();
+                            makeUiHidden = true;
+                        }
                         break;
                     default:
                         LOGE(TAG, "onRemoteMediaPlayerStatusUpdated(): Unexpected Idle Reason "
@@ -1486,12 +2113,50 @@ public class VideoCastManager extends BaseCastManager
 
     }
 
+    private void onRemoteMediaPreloadStatusUpdated() {
+        MediaQueueItem item = null;
+        mMediaStatus = mRemoteMediaPlayer.getMediaStatus();
+        if (mMediaStatus != null) {
+            item = mMediaStatus.getQueueItemById(mMediaStatus.getPreloadedItemId());
+        }
+        mPreLoadingItem = item;
+        updateMiniControllersVisibilityForUpcoming(item);
+        LOGD(TAG, "onRemoteMediaPreloadStatusUpdated() " + item);
+        for (VideoCastConsumer consumer : mVideoConsumers) {
+            consumer.onRemoteMediaPreloadStatusUpdated(item);
+        }
+    }
+
+    public MediaQueueItem getPreLoadingItem() {
+        return mPreLoadingItem;
+    }
+
+    /*
+    * This is called by onQueueStatusUpdated() of RemoteMediaPlayer
+    */
+    private void onQueueUpdated(List<MediaQueueItem> queueItems, MediaQueueItem item, int repeatMode,
+            boolean shuffle) {
+        LOGD(TAG, "onQueueUpdated() reached");
+        LOGD(TAG, String.format("Queue Items size: %d, Item: %s, Repeat Mode: %d, Shuffle: %s",
+                queueItems == null ? 0 : queueItems.size(), item, repeatMode, shuffle));
+        if (queueItems != null) {
+            mMediaQueue = new MediaQueue(new CopyOnWriteArrayList<>(queueItems), item, shuffle,
+                    repeatMode);
+        } else {
+            mMediaQueue = new MediaQueue(new CopyOnWriteArrayList<MediaQueueItem>(), null, false,
+                    MediaStatus.REPEAT_MODE_REPEAT_OFF);
+        }
+        for (VideoCastConsumer consumer : mVideoConsumers) {
+            consumer.onMediaQueueUpdated(queueItems, item, repeatMode, shuffle);
+        }
+    }
+
     /*
      * This is called by onMetadataUpdated() of RemoteMediaPlayer
      */
     public void onRemoteMediaPlayerMetadataUpdated() {
         LOGD(TAG, "onRemoteMediaPlayerMetadataUpdated() reached");
-        updateLockScreenMetadata();
+        updateMediaSessionMetadata();
         for (VideoCastConsumer consumer : mVideoConsumers) {
             consumer.onRemoteMediaPlayerMetadataUpdated();
         }
@@ -1502,46 +2167,61 @@ public class VideoCastManager extends BaseCastManager
         }
     }
 
+    /**
+     * Returns the Media Session Token. If there is no media session, it returns {@code null}
+     */
+    public MediaSessionCompat.Token getMediaSessionCompatToken() {
+        return mMediaSessionCompat == null ? null : mMediaSessionCompat.getSessionToken();
+    }
+
     /*
-     * Sets up the {@link RemoteControlClient} for this application. It also handles the audio
+     * Sets up the {@link MediaSessionCompat} for this application. It also handles the audio
      * focus.
      */
     @SuppressLint("InlinedApi")
-    private void setUpRemoteControl(final MediaInfo info) {
+    private void setUpMediaSession(final MediaInfo info) {
         if (!isFeatureEnabled(BaseCastManager.FEATURE_LOCKSCREEN)) {
             return;
         }
-        LOGD(TAG, "setUpRemoteControl() was called");
+        if (mMediaSessionCompat == null) {
+            mMediaEventReceiver = new ComponentName(mContext, VideoIntentReceiver.class.getName());
+            mMediaSessionCompat = new MediaSessionCompat(mContext, "TAG", mMediaEventReceiver, null);
+            mMediaSessionCompat.setFlags(MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS
+                    | MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS);
+            mMediaSessionCompat.setActive(true);
+            mMediaSessionCompat.setCallback(new MediaSessionCompat.Callback() {
+                @Override
+                public boolean onMediaButtonEvent(Intent mediaButtonIntent) {
+                    KeyEvent keyEvent = mediaButtonIntent
+                            .getParcelableExtra(Intent.EXTRA_KEY_EVENT);
+                    if (keyEvent != null && (keyEvent.getKeyCode() == KeyEvent.KEYCODE_MEDIA_PAUSE
+                            || keyEvent.getKeyCode() == KeyEvent.KEYCODE_MEDIA_PLAY)) {
+                        try {
+                            togglePlayback();
+                        } catch (CastException | TransientNetworkDisconnectionException |
+                                NoConnectionException e) {
+                            LOGE(TAG, "onMediaButtonEvent(): Failed to toggle playback", e);
+                        }
+                    }
+                    return true;
+                }
+            });
+        }
+
         mAudioManager.requestAudioFocus(null, AudioManager.STREAM_MUSIC,
                 AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK);
 
-        ComponentName eventReceiver = new ComponentName(
-                mContext, VideoIntentReceiver.class.getName());
-        mAudioManager.registerMediaButtonEventReceiver(eventReceiver);
+        mMediaSessionCompat.setPlaybackState(new PlaybackStateCompat.Builder()
+                .setState(PlaybackStateCompat.STATE_PLAYING, 0, 1.0f)
+                .setActions(PlaybackStateCompat.ACTION_PLAY_PAUSE).build());
 
-        if (mRemoteControlClientCompat == null) {
-            Intent intent = new Intent(Intent.ACTION_MEDIA_BUTTON);
-            intent.setComponent(mMediaButtonReceiverComponent);
-            mRemoteControlClientCompat = new RemoteControlClientCompat(
-                    PendingIntent.getBroadcast(mContext, 0, intent, 0));
-            RemoteControlHelper.registerRemoteControlClient(mAudioManager,
-                    mRemoteControlClientCompat);
-        }
-        mRemoteControlClientCompat.addToMediaRouter(mMediaRouter);
-        mRemoteControlClientCompat.setTransportControlFlags(
-                RemoteControlClient.FLAG_KEY_MEDIA_PLAY_PAUSE);
-        if (info == null) {
-            mRemoteControlClientCompat.setPlaybackState(RemoteControlClient.PLAYSTATE_PAUSED);
-            return;
-        } else {
-            mRemoteControlClientCompat.setPlaybackState(RemoteControlClient.PLAYSTATE_PLAYING);
-        }
-
-        // Update the remote control's image
+        // Update the media session's image
         updateLockScreenImage(info);
 
-        // update the remote control's metadata
-        updateLockScreenMetadata();
+        // update the media session's metadata
+        updateMediaSessionMetadata();
+
+        mMediaRouter.setMediaSessionCompat(mMediaSessionCompat);
     }
 
     /*
@@ -1560,7 +2240,7 @@ public class VideoCastManager extends BaseCastManager
      * full-screen image so we need to separately handle these two cases.
      */
     private void setBitmapForLockScreen(MediaInfo video) {
-        if (video == null || mRemoteControlClientCompat == null) {
+        if (video == null || mMediaSessionCompat == null) {
             return;
         }
         Uri imgUrl = null;
@@ -1584,28 +2264,34 @@ public class VideoCastManager extends BaseCastManager
                     R.drawable.album_art_placeholder);
         }
         if (bm != null) {
-            mRemoteControlClientCompat.editMetadata(false).putBitmap(
-                    RemoteControlClientCompat.MetadataEditorCompat.
-                            METADATA_KEY_ARTWORK, bm).apply();
+            MediaMetadataCompat currentMetadata = mMediaSessionCompat.getController().getMetadata();
+            MediaMetadataCompat.Builder newBuilder = currentMetadata == null
+                    ? new MediaMetadataCompat.Builder()
+                    : new MediaMetadataCompat.Builder(currentMetadata);
+            mMediaSessionCompat.setMetadata(newBuilder
+                    .putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, bm)
+                    .build());
         } else {
-
             new FetchBitmapTask() {
                 @Override
                 protected void onPostExecute(Bitmap bitmap) {
-                    if (mRemoteControlClientCompat != null) {
-                        mRemoteControlClientCompat.editMetadata(false).putBitmap(
-                                RemoteControlClientCompat.MetadataEditorCompat.
-                                        METADATA_KEY_ARTWORK, bitmap).apply();
-                    }
+                    MediaMetadataCompat currentMetadata = mMediaSessionCompat.getController()
+                            .getMetadata();
+                    MediaMetadataCompat.Builder newBuilder = currentMetadata == null
+                            ? new MediaMetadataCompat.Builder()
+                            : new MediaMetadataCompat.Builder(currentMetadata);
+                    mMediaSessionCompat.setMetadata(newBuilder
+                            .putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, bitmap)
+                            .build());
                 }
             }.execute(imgUrl);
         }
     }
     /*
-     * Updates the playback status of the RemoteControlClient
+     * Updates the playback status of the Media Session
      */
     @TargetApi(Build.VERSION_CODES.ICE_CREAM_SANDWICH)
-    private void updateRemoteControl(boolean playing) {
+    private void updateMediaSession(boolean playing) {
         if (!isFeatureEnabled(FEATURE_LOCKSCREEN)) {
             return;
         }
@@ -1613,18 +2299,20 @@ public class VideoCastManager extends BaseCastManager
             return;
         }
         try {
-            if ((mRemoteControlClientCompat == null) && playing) {
-                setUpRemoteControl(getRemoteMediaInformation());
+            if ((mMediaSessionCompat == null) && playing) {
+                setUpMediaSession(getRemoteMediaInformation());
             }
-            if (mRemoteControlClientCompat != null) {
-                int playState = isRemoteStreamLive() ? RemoteControlClient.PLAYSTATE_BUFFERING
-                        : RemoteControlClient.PLAYSTATE_PLAYING;
-                mRemoteControlClientCompat
-                        .setPlaybackState(playing ? playState
-                                : RemoteControlClient.PLAYSTATE_PAUSED);
+            if (mMediaSessionCompat != null) {
+                int playState = isRemoteStreamLive() ? PlaybackStateCompat.STATE_BUFFERING
+                        : PlaybackStateCompat.STATE_PLAYING;
+                int state = playing ? playState : PlaybackStateCompat.STATE_PAUSED;
+
+                mMediaSessionCompat.setPlaybackState(new PlaybackStateCompat.Builder()
+                        .setState(state, 0, 1.0f)
+                        .setActions(PlaybackStateCompat.ACTION_PLAY_PAUSE).build());
             }
         } catch (TransientNetworkDisconnectionException | NoConnectionException e) {
-            LOGE(TAG, "Failed to set up RCC due to network issues", e);
+            LOGE(TAG, "Failed to set up MediaSessionCompat due to network issues", e);
         }
     }
 
@@ -1632,45 +2320,49 @@ public class VideoCastManager extends BaseCastManager
      * On ICS and JB, lock screen metadata is one liner: Title - Album Artist - Album. On KitKat, it
      * has two lines: Title , Album Artist - Album
      */
-    private void updateLockScreenMetadata() {
-        if ((mRemoteControlClientCompat == null) || !isFeatureEnabled(FEATURE_LOCKSCREEN)) {
+    private void updateMediaSessionMetadata() {
+        if ((mMediaSessionCompat == null) || !isFeatureEnabled(FEATURE_LOCKSCREEN)) {
             return;
         }
 
         try {
-            // Update the remote controls
             MediaInfo info = getRemoteMediaInformation();
             if (info == null) {
                 return;
             }
             final MediaMetadata mm = info.getMetadata();
-
-            mRemoteControlClientCompat.editMetadata(false)
-                    .putString(MediaMetadataRetriever.METADATA_KEY_TITLE,
-                            mm.getString(MediaMetadata.KEY_TITLE))
-                    .putString(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST,
-                            mContext.getResources().getString(
-                                    R.string.ccl_casting_to_device, getDeviceName()))
-                    .putLong(MediaMetadataRetriever.METADATA_KEY_DURATION,
-                            info.getStreamDuration())
-                    .apply();
+            MediaMetadataCompat currentMetadata = mMediaSessionCompat.getController().getMetadata();
+            MediaMetadataCompat.Builder newBuilder = currentMetadata == null
+                    ? new MediaMetadataCompat.Builder()
+                    : new MediaMetadataCompat.Builder(currentMetadata);
+            mMediaSessionCompat.setMetadata(
+                    newBuilder
+                            .putString(MediaMetadataCompat.METADATA_KEY_TITLE,
+                                    mm.getString(MediaMetadata.KEY_TITLE))
+                            .putString(MediaMetadataCompat.METADATA_KEY_ALBUM_ARTIST,
+                                    mContext.getResources().getString(
+                                            R.string.ccl_casting_to_device, getDeviceName()))
+                            .putLong(MediaMetadataCompat.METADATA_KEY_DURATION,
+                                    info.getStreamDuration())
+                            .build());
         } catch (NotFoundException e) {
-            LOGE(TAG, "Failed to update RCC due to resource not found", e);
+            LOGE(TAG, "Failed to update Media Session due to resource not found", e);
         } catch (TransientNetworkDisconnectionException | NoConnectionException e) {
-            LOGE(TAG, "Failed to update RCC due to network issues", e);
+            LOGE(TAG, "Failed to update Media Session due to network issues", e);
         }
     }
 
     /*
-     * Removes the remote control client
+     * Clears Media Session
      */
-    public void removeRemoteControlClient() {
+    public void clearMediaSession() {
+        LOGD(TAG, "clearMediaSession()");
         if (isFeatureEnabled(FEATURE_LOCKSCREEN)) {
             mAudioManager.abandonAudioFocus(null);
-            if (mRemoteControlClientCompat != null) {
-                RemoteControlHelper.unregisterRemoteControlClient(mAudioManager,
-                        mRemoteControlClientCompat);
-                mRemoteControlClientCompat = null;
+            if (mMediaSessionCompat != null) {
+                mMediaSessionCompat.setActive(false);
+                mMediaSessionCompat.release();
+                mMediaSessionCompat = null;
             }
         }
     }
@@ -1772,7 +2464,7 @@ public class VideoCastManager extends BaseCastManager
     @Override
     public void onConnectionFailed(ConnectionResult result) {
         super.onConnectionFailed(result);
-        updateRemoteControl(false);
+        updateMediaSession(false);
         stopNotificationService();
     }
 
@@ -1782,9 +2474,10 @@ public class VideoCastManager extends BaseCastManager
         super.onDisconnected(stopAppOnExit, clearPersistedConnectionData, setDefaultRoute);
         updateMiniControllersVisibility(false);
         if (clearPersistedConnectionData && !mConnectionSuspended) {
-            removeRemoteControlClient();
+            clearMediaSession();
         }
         mState = MediaStatus.PLAYER_STATE_IDLE;
+        mMediaQueue = null;
     }
 
     @Override
@@ -1840,6 +2533,7 @@ public class VideoCastManager extends BaseCastManager
      * {@code dispatchEvent} and call this method:
      * <pre>
      public boolean dispatchKeyEvent(KeyEvent event) {
+<<<<<<< HEAD
 <<<<<<< HEAD:src/com/google/sample/castcompanionlibrary/cast/VideoCastManager.java
 <<<<<<< HEAD
      if (mCastManager.onDispatchVolumeKeyEvent(event, VOLUME_DELTA)) {
@@ -1858,6 +2552,12 @@ public class VideoCastManager extends BaseCastManager
         }
         return super.dispatchKeyEvent(event);
 >>>>>>> 070c7375ceef614300df227e39fad5288eb85643:src/com/google/android/libraries/cast/companionlibrary/cast/VideoCastManager.java
+=======
+         if (mCastManager.onDispatchVolumeKeyEvent(event, VOLUME_DELTA)) {
+            return true;
+         }
+         return super.dispatchKeyEvent(event);
+>>>>>>> b2c601efef4f24b6d8bcd57dbc705b74ee37b85d
      }
      * </pre>
      * @param event The dispatched event.
@@ -2129,6 +2829,94 @@ public class VideoCastManager extends BaseCastManager
         for (OnTracksSelectedListener listener : mTracksSelectedListeners) {
             listener.onTracksSelected(tracks);
         }
+    }
+
+    public final MediaQueue getMediaQueue() {
+        return mMediaQueue;
+    }
+
+    private void stopProgressTimer() {
+        LOGD(TAG, "Stopped TrickPlay Timer");
+        if (mProgressTask != null) {
+            mProgressTask.cancel();
+            mProgressTask = null;
+        }
+        if (mProgressTimer != null) {
+            mProgressTimer.cancel();
+            mProgressTimer = null;
+        }
+    }
+
+    private void restartProgressTimer() {
+        stopProgressTimer();
+        mProgressTimer = new Timer();
+        mProgressTask = new UpdateProgressTask();
+        mProgressTimer.scheduleAtFixedRate(mProgressTask, 100, PROGRESS_UPDATE_INTERVAL_MS);
+        LOGD(TAG, "Restarted Progress Timer");
+    }
+
+    private class UpdateProgressTask extends TimerTask {
+
+        @Override
+        public void run() {
+            int currentPos;
+            if (mState == MediaStatus.PLAYER_STATE_BUFFERING || !isConnected()
+                    || mRemoteMediaPlayer == null) {
+                return;
+            }
+            try {
+                int duration = (int) getMediaDuration();
+                if (duration > 0) {
+                    currentPos = (int) getCurrentMediaPosition();
+                    updateProgress(currentPos, duration);
+                }
+            } catch (TransientNetworkDisconnectionException | NoConnectionException e) {
+                LOGE(TAG, "Failed to update the progress tracker due to network issues", e);
+            }
+        }
+    }
+
+    /**
+     * <b>Note:</b> This is called on a worker thread
+     */
+    private void updateProgress(int currentPosition, int duration) {
+        synchronized (mMiniControllers) {
+            for (final IMiniController controller : mMiniControllers) {
+                controller.setProgress(currentPosition, duration);
+            }
+        }
+    }
+
+    /**
+     * Sets the policy to be used for the visibility of skip forward/backward on the {@link
+     * VideoCastControllerActivity}. Note that the new policy is enforced the next time that
+     * activity is opened and does not apply to the currently runnig one, if any.
+     *
+     * @param policy can be one of {@link VideoCastController#NEXT_PREV_VISIBILITY_POLICY_DISABLED},
+     * {@link VideoCastController#NEXT_PREV_VISIBILITY_POLICY_HIDDEN} or
+     * {@link VideoCastController#NEXT_PREV_VISIBILITY_POLICY_ALWAYS}.
+     */
+    public void setNextPreviousVisibilityPolicy(final int policy) {
+        switch(policy) {
+            case VideoCastController.NEXT_PREV_VISIBILITY_POLICY_DISABLED:
+            case VideoCastController.NEXT_PREV_VISIBILITY_POLICY_ALWAYS:
+            case VideoCastController.NEXT_PREV_VISIBILITY_POLICY_HIDDEN:
+                mPreferenceAccessor.saveIntToPreference(PREFS_KEY_NEXT_PREV_POLICY, policy);
+                return;
+            default:
+                LOGD(TAG, "Invalid value for the NextPreviousVisibilityPolicy was requested");
+        }
+        throw new IllegalArgumentException(
+                "Invalid value for the NextPreviousVisibilityPolicy was requested");
+    }
+
+    /**
+     * Turns on/off the immersive mode for the full screen cast controller
+     * {@link VideoCastControllerActivity}. Calls to this will take effect the next time that
+     * activity is launched so it is recommended to be called early in the application lifecycle.
+     */
+    public void setCastControllerImmersive(boolean mode) {
+        mPreferenceAccessor.saveBooleanToPreference(PREFS_KEY_IMMERSIVE_MODE, mode);
     }
 
 }

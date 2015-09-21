@@ -3,9 +3,9 @@
 CastCompanionLibrary-android is a library project to enable developers integrate Cast capabilities into their applications faster and easier.
 
 ## Dependencies
-* google-play-services_lib library from the Android SDK (at least version 7.0+)
-* android-support-v7-appcompat (version 21 or above)
-* android-support-v7-mediarouter (version 20 or above)
+* google-play-services_lib library from the Android SDK (at least version 7.8+)
+* android-support-v7-appcompat (version 22 or above)
+* android-support-v7-mediarouter (version 22 or above)
 
 ## Setup Instructions
 * Set up the project dependencies
@@ -29,6 +29,57 @@ See LICENSE
 Google Cast Developers Community on Google+ [http://goo.gl/TPLDxj](http://goo.gl/TPLDxj)
 
 ## Change List
+
+2.4
+ * Fixed a number of bugs (#205, #204, #203)
+ * Prepared the library for Marshmallow permissions related to the Play Services
+ * Some code cleanup
+
+2.3.2
+ * Updated the icon for "queue list" in the library.
+
+2.3.1
+ * Updated gradle build to use the latest build tool and plugin version
+ * Fixed #198. This is a fix for a memory leak in the VideoCastControllerActivity so it is strongly recommended to apply this update.
+
+2.3
+
+ * Moved to use MediaSessionCompat and removed all references to RemoteControlClient (RCC) across the library.
+ In addition, started to use the MediaStyle added to the NotificationCompat in the v7 app compat support.
+ library.
+ * Updated Play Services version to use 7.8+
+ * Persisting the policy on showing the next/prev for the full screen controller so that it is always honored.
+ * Fixed a few issue around notification visibility when app is in background.
+ * These issues have been addressed: #196, #194, #178
+
+2.2
+
+ * Removed a duplicate callback (onRemoteMediaPlayerQueueStatusUpdated()) as it was a duplicate of
+ onMediaQueueUpdated(). If your code is currently using onRemoteMediaPlayerQueueStatusUpdated(), please replace that
+ with onMediaQueueUpdated() which has an identical signature.
+ * Fixed issues #185, #189 and #190. For #189, a new set of resource aliases are introduced which should make
+ replacing those resources with your own simpler.
+
+2.1.1
+
+ * Now the MediaRouter support library added back the support for the volume on the cast dialog, so CCL is hiding that again.
+ * Some typo fixes.
+
+2.1
+
+ * Added Queue related APIs for handling autoplay and queue
+ * Added "stop" button to notification and lockscreen for live streams in Lollipop and above
+ * Expanded callbacks in VideoCastConsumer interface to provide feedback on success of queue related API calls
+ * Extended the full-screen VideoCastControllerActivity to include next/previous for navigation through queues.
+  The visibility of these new buttons can be set through VideoCastManager.setNextPreviousVisibilityPolicy(policy)
+ * The MiniController now has a modified UI with an additional item for showing an upcoming media item from the queue.
+ * Addressed some issues
+
+2.0.2
+
+ * Addressing issues #171, #174
+ * DataCastConsumer.onApplicationConnectionFailed() now returns void
+
 2.0.1
 
  * Improving the management of MediaRouteButton

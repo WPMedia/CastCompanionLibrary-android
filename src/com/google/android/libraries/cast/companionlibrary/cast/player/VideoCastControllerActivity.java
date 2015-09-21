@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 Google Inc. All Rights Reserved.
+ * Copyright (C) 2014 Google Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,21 +17,22 @@
 package com.google.android.libraries.cast.companionlibrary.cast.player;
 
 
-import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
+import android.support.annotation.NonNull;
 import android.support.v4.app.Fragment;
 import android.support.v4.app.FragmentManager;
 import android.support.v4.app.FragmentTransaction;
-import android.support.v7.app.ActionBarActivity;
+import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
 import android.view.KeyEvent;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.View.OnClickListener;
+import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
 import android.widget.SeekBar;
@@ -40,43 +41,46 @@ import android.widget.TextView;
 
 import com.google.android.gms.cast.MediaInfo;
 import com.google.android.gms.cast.MediaStatus;
+import com.google.android.libraries.cast.companionlibrary.R;
 import com.google.android.libraries.cast.companionlibrary.cast.VideoCastManager;
 import com.google.android.libraries.cast.companionlibrary.cast.exceptions.NoConnectionException;
 import com.google.android.libraries.cast.companionlibrary.cast.exceptions.TransientNetworkDisconnectionException;
 import com.google.android.libraries.cast.companionlibrary.cast.tracks.ui.TracksChooserDialog;
 import com.google.android.libraries.cast.companionlibrary.utils.LogUtils;
 import com.google.android.libraries.cast.companionlibrary.utils.Utils;
-import com.google.android.libraries.cast.companionlibrary.R;
+import com.google.android.libraries.cast.companionlibrary.widgets.MiniController;
 
 import static com.google.android.libraries.cast.companionlibrary.utils.LogUtils.LOGD;
 import static com.google.android.libraries.cast.companionlibrary.utils.LogUtils.LOGE;
 /**
- * This class provides an {@link Activity} that clients can easily add to their applications to
- * provide an out-of-the-box remote player when a video is casting to a cast device.
- * {@link VideoCastManager} can manage the lifecycle and presentation of this activity.
+ * This class provides an {@link android.app.Activity} that clients can easily add to their
+ * applications to provide an out-of-the-box remote player when a video is casting to a cast device.
+ * {@link com.google.android.libraries.cast.companionlibrary.cast.VideoCastManager} can manage the
+ * lifecycle and presentation of this activity.
  * <p>
  * This activity provides a number of controllers for managing the playback of the remote content:
  * play/pause (or play/stop when a live stream is used) and seekbar (for non-live streams).
  * <p>
  * Clients who need to perform a pre-authorization process for playback can register a
  * {@link MediaAuthListener} by calling
- * {@link VideoCastManager#startVideoCastControllerActivity(Context, MediaAuthService)}
+ * {@link VideoCastManager#startVideoCastControllerActivity(android.content.Context, MediaAuthService)}
  * In that case, this activity manages starting the {@link MediaAuthService} and will register a
  * listener to handle the result.
  */
-public class VideoCastControllerActivity extends ActionBarActivity implements VideoCastController {
+public class VideoCastControllerActivity extends AppCompatActivity implements
+        VideoCastController {
 
-    private static final String TAG = LogUtils.makeLogTag(VideoCastControllerActivity.class);
+    private static final String TAG = LogUtils
+            .makeLogTag(VideoCastControllerActivity.class);
     public static final String TASK_TAG = "task";
     public static final String DIALOG_TAG = "dialog";
     private VideoCastManager mCastManager;
     private View mPageView;
-    private ImageView mPlayPause;
+    private ImageButton mPlayPause;
     private TextView mLiveText;
     private TextView mStart;
     private TextView mEnd;
     private SeekBar mSeekbar;
-    private TextView mLine1;
     private TextView mLine2;
     private ProgressBar mLoading;
     private double mVolumeIncrement;
@@ -86,7 +90,14 @@ public class VideoCastControllerActivity extends ActionBarActivity implements Vi
     private Drawable mStopDrawable;
     private OnVideoCastControllerListener mListener;
     private int mStreamType;
-    private ImageView mClosedCaptionIcon;
+    private ImageButton mClosedCaptionIcon;
+    private ImageButton mSkipNext;
+    private ImageButton mSkipPrevious;
+    private View mPlaybackControls;
+    private MiniController mMini;
+    private Toolbar mToolbar;
+    private int mNextPreviousVisibilityPolicy
+            = VideoCastController.NEXT_PREV_VISIBILITY_POLICY_DISABLED;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -96,27 +107,40 @@ public class VideoCastControllerActivity extends ActionBarActivity implements Vi
         mCastManager = VideoCastManager.getInstance();
         mVolumeIncrement = mCastManager.getVolumeStep();
 
-        setUpActionBar();
         Bundle extras = getIntent().getExtras();
         if (extras == null) {
             finish();
             return;
         }
 
+        setUpActionBar();
+
         FragmentManager fm = getSupportFragmentManager();
-        VideoCastControllerFragment videoCastControllerFragment = (VideoCastControllerFragment) fm
-                .findFragmentByTag(TASK_TAG);
+        VideoCastControllerFragment videoCastControllerFragment
+                = (VideoCastControllerFragment) fm.findFragmentByTag(TASK_TAG);
 
         // if fragment is null, it means this is the first time, so create it
         if (videoCastControllerFragment == null) {
-            videoCastControllerFragment = VideoCastControllerFragment.newInstance(extras);
+            videoCastControllerFragment = VideoCastControllerFragment
+                    .newInstance(extras);
             fm.beginTransaction().add(videoCastControllerFragment, TASK_TAG).commit();
-            mListener = videoCastControllerFragment;
-            setOnVideoCastControllerChangedListener(mListener);
+            setOnVideoCastControllerChangedListener(videoCastControllerFragment);
         } else {
-            mListener = videoCastControllerFragment;
+            setOnVideoCastControllerChangedListener(videoCastControllerFragment);
             mListener.onConfigurationChanged();
         }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        mCastManager.addMiniController(mMini);
+    }
+
+    @Override
+    protected void onPause() {
+        mCastManager.removeMiniController(mMini);
+        super.onPause();
     }
 
     @Override
@@ -136,28 +160,30 @@ public class VideoCastControllerActivity extends ActionBarActivity implements Vi
     }
 
     @Override
-    public boolean dispatchKeyEvent(KeyEvent event) {
-        if (mCastManager.onDispatchVolumeKeyEvent(event, mVolumeIncrement)) {
-            return true;
-        }
-        return super.dispatchKeyEvent(event);
+    public boolean dispatchKeyEvent(@NonNull KeyEvent event) {
+        return mCastManager.onDispatchVolumeKeyEvent(event, mVolumeIncrement) || super
+                .dispatchKeyEvent(event);
     }
 
     private void loadAndSetupViews() {
-        mPauseDrawable = getResources().getDrawable(R.drawable.ic_av_pause_dark);
-        mPlayDrawable = getResources().getDrawable(R.drawable.ic_av_play_dark);
-        mStopDrawable = getResources().getDrawable(R.drawable.ic_av_stop_dark);
+        mPauseDrawable = getResources().getDrawable(R.drawable.ic_pause_circle_white_80dp);
+        mPlayDrawable = getResources().getDrawable(R.drawable.ic_play_circle_white_80dp);
+        mStopDrawable = getResources().getDrawable(R.drawable.ic_stop_circle_white_80dp);
         mPageView = findViewById(R.id.pageview);
-        mPlayPause = (ImageView) findViewById(R.id.imageview);
+        mPlayPause = (ImageButton) findViewById(R.id.play_pause_toggle);
         mLiveText = (TextView) findViewById(R.id.live_text);
         mStart = (TextView) findViewById(R.id.start_text);
         mEnd = (TextView) findViewById(R.id.end_text);
         mSeekbar = (SeekBar) findViewById(R.id.seekbar);
-        mLine1 = (TextView) findViewById(R.id.textview1);
         mLine2 = (TextView) findViewById(R.id.textview2);
         mLoading = (ProgressBar) findViewById(R.id.progressbar1);
         mControllers = findViewById(R.id.controllers);
-        mClosedCaptionIcon = (ImageView) findViewById(R.id.cc);
+        mClosedCaptionIcon = (ImageButton) findViewById(R.id.cc);
+        mSkipNext = (ImageButton) findViewById(R.id.next);
+        mSkipPrevious = (ImageButton) findViewById(R.id.previous);
+        mPlaybackControls = findViewById(R.id.playback_controls);
+        mMini = (MiniController) findViewById(R.id.miniController1);
+        mMini.setCurrentVisibility(false);
         setClosedCaptionState(CC_DISABLED);
         mPlayPause.setOnClickListener(new OnClickListener() {
 
@@ -231,6 +257,28 @@ public class VideoCastControllerActivity extends ActionBarActivity implements Vi
                 }
             }
         });
+
+        mSkipNext.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                try {
+                    mListener.onSkipNextClicked(v);
+                } catch (TransientNetworkDisconnectionException | NoConnectionException e) {
+                    LOGE(TAG, "Failed to move to the next item in the queue", e);
+                }
+            }
+        });
+
+        mSkipPrevious.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                try {
+                    mListener.onSkipPreviousClicked(v);
+                } catch (TransientNetworkDisconnectionException | NoConnectionException e) {
+                    LOGE(TAG, "Failed to move to the previous item in the queue", e);
+                }
+            }
+        });
     }
 
     private void showTracksChooserDialog()
@@ -249,9 +297,8 @@ public class VideoCastControllerActivity extends ActionBarActivity implements Vi
     }
 
     private void setUpActionBar() {
-        Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
-        toolbar.setTitle("");
-        setSupportActionBar(toolbar);
+        mToolbar = (Toolbar) findViewById(R.id.toolbar);
+        setSupportActionBar(mToolbar);
         getSupportActionBar().setDisplayHomeAsUpEnabled(true);
     }
 
@@ -289,13 +336,58 @@ public class VideoCastControllerActivity extends ActionBarActivity implements Vi
     }
 
     @Override
+    public void onQueueItemsUpdated(int queueLength, int position) {
+        boolean prevAvailable = position > 0 ;
+        boolean nextAvailable = position < queueLength - 1;
+        switch(mNextPreviousVisibilityPolicy) {
+            case VideoCastController.NEXT_PREV_VISIBILITY_POLICY_HIDDEN:
+                if (nextAvailable) {
+                    mSkipNext.setVisibility(View.VISIBLE);
+                    mSkipNext.setEnabled(true);
+                } else {
+                    mSkipNext.setVisibility(View.INVISIBLE);
+                }
+                if (prevAvailable) {
+                    mSkipPrevious.setVisibility(View.VISIBLE);
+                    mSkipPrevious.setEnabled(true);
+                } else {
+                    mSkipPrevious.setVisibility(View.INVISIBLE);
+                }
+                break;
+            case VideoCastController.NEXT_PREV_VISIBILITY_POLICY_ALWAYS:
+                mSkipNext.setVisibility(View.VISIBLE);
+                mSkipNext.setEnabled(true);
+                mSkipPrevious.setVisibility(View.VISIBLE);
+                mSkipPrevious.setEnabled(true);
+                break;
+            case VideoCastController.NEXT_PREV_VISIBILITY_POLICY_DISABLED:
+                if (nextAvailable) {
+                    mSkipNext.setVisibility(View.VISIBLE);
+                    mSkipNext.setEnabled(true);
+                } else {
+                    mSkipNext.setVisibility(View.VISIBLE);
+                    mSkipNext.setEnabled(false);
+                }
+                if (prevAvailable) {
+                    mSkipPrevious.setVisibility(View.VISIBLE);
+                    mSkipPrevious.setEnabled(true);
+                } else {
+                    mSkipPrevious.setVisibility(View.VISIBLE);
+                    mSkipPrevious.setEnabled(false);
+                }
+                break;
+            default:
+                LOGE(TAG, "onQueueItemsUpdated(): Invalid NextPreviousPolicy has been set");
+        }
+    }
+
+    @Override
     public void setPlaybackStatus(int state) {
         LOGD(TAG, "setPlaybackStatus(): state = " + state);
         switch (state) {
             case MediaStatus.PLAYER_STATE_PLAYING:
                 mLoading.setVisibility(View.INVISIBLE);
-                mPlayPause.setVisibility(View.VISIBLE);
-
+                mPlaybackControls.setVisibility(View.VISIBLE);
                 if (mStreamType == MediaInfo.STREAM_TYPE_LIVE) {
                     mPlayPause.setImageDrawable(mStopDrawable);
                 } else {
@@ -309,7 +401,7 @@ public class VideoCastControllerActivity extends ActionBarActivity implements Vi
             case MediaStatus.PLAYER_STATE_PAUSED:
                 mControllers.setVisibility(View.VISIBLE);
                 mLoading.setVisibility(View.INVISIBLE);
-                mPlayPause.setVisibility(View.VISIBLE);
+                mPlaybackControls.setVisibility(View.VISIBLE);
                 mPlayPause.setImageDrawable(mPlayDrawable);
                 mLine2.setText(getString(R.string.ccl_casting_to_device,
                         mCastManager.getDeviceName()));
@@ -317,12 +409,12 @@ public class VideoCastControllerActivity extends ActionBarActivity implements Vi
             case MediaStatus.PLAYER_STATE_IDLE:
                 mLoading.setVisibility(View.INVISIBLE);
                 mPlayPause.setImageDrawable(mPlayDrawable);
-                mPlayPause.setVisibility(View.VISIBLE);
+                mPlaybackControls.setVisibility(View.VISIBLE);
                 mLine2.setText(getString(R.string.ccl_casting_to_device,
                         mCastManager.getDeviceName()));
                 break;
             case MediaStatus.PLAYER_STATE_BUFFERING:
-                mPlayPause.setVisibility(View.INVISIBLE);
+                mPlaybackControls.setVisibility(View.INVISIBLE);
                 mLoading.setVisibility(View.VISIBLE);
                 mLine2.setText(getString(R.string.ccl_loading));
                 break;
@@ -352,7 +444,7 @@ public class VideoCastControllerActivity extends ActionBarActivity implements Vi
 
     @Override
     public void setTitle(String text) {
-        mLine1.setText(text);
+        mToolbar.setTitle(text);
     }
 
     @Override
@@ -363,7 +455,7 @@ public class VideoCastControllerActivity extends ActionBarActivity implements Vi
     @Override
     public void setOnVideoCastControllerChangedListener(OnVideoCastControllerListener listener) {
         if (listener != null) {
-            this.mListener = listener;
+            mListener = listener;
         }
     }
 
@@ -383,6 +475,11 @@ public class VideoCastControllerActivity extends ActionBarActivity implements Vi
     @Override
     public void closeActivity() {
         finish();
+    }
+
+    @Override // from VideoCastController
+    public void setNextPreviousVisibilityPolicy(int policy) {
+        mNextPreviousVisibilityPolicy = policy;
     }
 
 }
