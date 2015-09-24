@@ -287,8 +287,6 @@ public final class Utils {
     }
 
     /**
-=======
->>>>>>> 070c7375ceef614300df227e39fad5288eb85643:src/com/google/android/libraries/cast/companionlibrary/utils/Utils.java
      * A utility method to validate that the appropriate version of the Google Play Services is
      * available on the device. If not, it will open a dialog to address the issue. The dialog
      * displays a localized message about the error and upon user confirmation (by tapping on
@@ -473,7 +471,7 @@ public final class Utils {
     /**
      * Using Instrinsic function of RenderScript to perform Gaussian blur
      *
-     * @param inBitmap Image to be blurred
+     * @param bitmap Image to be blurred
      * @param context  Activity reference
      */
     public static Bitmap blurBitmap(Bitmap bitmap, Context context) {
@@ -492,7 +490,7 @@ public final class Utils {
             Allocation allOut = Allocation.createFromBitmap(rs, outBitmap);
 
             //Set the radius of the blur
-            blurScript.setRadius(25.f);
+            blurScript.setRadius(4.f);
 
             //Perform the Renderscript
             blurScript.setInput(allIn);
