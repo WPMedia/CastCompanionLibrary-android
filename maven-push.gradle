@@ -17,11 +17,11 @@ afterEvaluate { project ->
                 pom.version = "${VERSION_NAME}"
 
                 repository(url: getReleaseRepositoryUrl()) {
-                    authentication(userName: "${maven_user}", password: "${maven_password}")
+                    authentication(userName: "${artifactory_user}", password: "${artifactory_password}")
                 }
 
                 snapshotRepository(url: getSnapshotRepositoryUrl()) {
-                    authentication(userName: "${maven_user}", password: "${maven_password}")
+                    authentication(userName: "${artifactory_user}", password: "${artifactory_password}")
                 }
 
                 pom.project {

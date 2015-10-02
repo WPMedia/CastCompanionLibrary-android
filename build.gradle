@@ -36,7 +36,6 @@ android {
     compileSdkVersion 23
     defaultPublishConfig "release"
     buildToolsVersion "23"
-    publishNonDefault true
 
     defaultConfig {
         minSdkVersion 10
